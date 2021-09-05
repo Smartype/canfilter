@@ -1,5 +1,5 @@
 // flasher state variables
-uint32_t *prog_ptr = NULL;
+uint16_t *prog_ptr = NULL;
 bool unlocked = false;
 CAN_HandleTypeDef hcan1;
 typedef union {
@@ -34,28 +34,27 @@ void flash_unlock(void) {
   FLASH->KEYR = 0xCDEF89AB;
 }
 
-// TODO: add sector support
+void FLASH_PageErase(uint32_t PageAddress);
 bool flash_erase_sector(uint8_t sector, bool unlocked) {
-#if 0
   // don't erase the bootloader(sector 0)
   if (sector != 0 && sector < 12 && unlocked) {
-    FLASH->CR = (sector << 3) | FLASH_CR_SER;
-    FLASH->CR |= FLASH_CR_STRT;
-    while (FLASH->SR & FLASH_SR_BSY);
+    // 1 sector is 16k, for 105, page is 2k
+    uint32_t fst_page = sector * 16 / 2;
+    for (int i = 0; i < 8; i ++)
+    {
+        FLASH_PageErase(FLASH_BASE + fst_page * i * 2048);
+        while (FLASH->SR & FLASH_SR_BSY);
+    }
     return true;
   }
-#endif
   return false;
 }
 
-// TODO: add write
-void flash_write_word(void *prog_ptr, uint32_t data) {
-#if 0
-  uint32_t *pp = prog_ptr;
-  FLASH->CR = FLASH_CR_PSIZE_1 | FLASH_CR_PG;
+void flash_write_halfword(void *prog_ptr, uint16_t data) {
+  uint16_t *pp = prog_ptr;
+  FLASH->CR = FLASH_CR_PG;
   *pp = data;
   while (FLASH->SR & FLASH_SR_BSY);
-#endif
 }
 
 void flush_write_buffer(void) { }
@@ -69,7 +68,7 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
   resp[0] = 0xff;
   resp[2] = setup->b.bRequest;
   resp[3] = ~setup->b.bRequest;
-  *((uint32_t **)&resp[8]) = prog_ptr;
+  *((uint32_t **)&resp[8]) = (uint32_t*)prog_ptr;
   resp_len = 0xc;
 
   int sec;
@@ -85,7 +84,7 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
         resp[1] = 0xff;
       }
       unlocked = true;
-      prog_ptr = (uint32_t *)APP_START_ADDRESS;
+      prog_ptr = (uint16_t*)(uint32_t *)APP_START_ADDRESS;
       break;
     // **** 0xb2: erase sector
     case 0xb2:
@@ -121,9 +120,8 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
 
 void usb_cb_ep2_out(void *usbdata, int len, bool hardwired) {
   UNUSED(hardwired);
-  for (int i = 0; i < len/4; i++) {
-    flash_write_word(prog_ptr, *(uint32_t*)(usbdata+(i*4)));
-    //*(uint64_t*)(&spi_tx_buf[0x30+(i*4)]) = *prog_ptr;
+  for (int i = 0; i < len/2; i++) {
+    flash_write_halfword(prog_ptr, *(uint16_t*)(usbdata+(i*2)));
     prog_ptr++;
   }
 }
