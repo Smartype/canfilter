@@ -57,8 +57,11 @@
 
 /* External variables --------------------------------------------------------*/
 extern CAN_HandleTypeDef hcan1;
+
+#ifndef BOOTSTUB_
 extern CAN_HandleTypeDef hcan2;
 extern TIM_HandleTypeDef htim6;
+#endif
 
 /* USER CODE BEGIN EV */
 
@@ -205,6 +208,8 @@ void SysTick_Handler(void)
 /**
   * @brief This function handles CAN1 TX interrupt.
   */
+
+#ifndef BOOTSTUB
 void CAN1_TX_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN1_TX_IRQn 0 */
@@ -215,10 +220,13 @@ void CAN1_TX_IRQHandler(void)
 
   /* USER CODE END CAN1_TX_IRQn 1 */
 }
+#endif
 
 /**
   * @brief This function handles CAN1 RX0 interrupt.
   */
+
+#ifndef BOOTSTUB
 void CAN1_RX0_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN1_RX0_IRQn 0 */
@@ -229,10 +237,12 @@ void CAN1_RX0_IRQHandler(void)
 
   /* USER CODE END CAN1_RX0_IRQn 1 */
 }
+#endif
 
 /**
   * @brief This function handles CAN1 SCE interrupt.
   */
+#ifndef BOOTSTUB
 void CAN1_SCE_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN1_SCE_IRQn 0 */
@@ -243,10 +253,12 @@ void CAN1_SCE_IRQHandler(void)
 
   /* USER CODE END CAN1_SCE_IRQn 1 */
 }
+#endif
 
 /**
   * @brief This function handles TIM6 global interrupt.
   */
+#ifndef BOOTSTUB_
 void TIM6_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM6_IRQn 0 */
@@ -257,10 +269,12 @@ void TIM6_IRQHandler(void)
 
   /* USER CODE END TIM6_IRQn 1 */
 }
+#endif
 
 /**
   * @brief This function handles CAN2 TX interrupt.
   */
+#ifndef BOOTSTUB_
 void CAN2_TX_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN2_TX_IRQn 0 */
@@ -272,10 +286,12 @@ void CAN2_TX_IRQHandler(void)
 
   /* USER CODE END CAN2_TX_IRQn 1 */
 }
+#endif
 
 /**
   * @brief This function handles CAN2 RX0 interrupt.
   */
+#ifndef BOOTSTUB_
 void CAN2_RX0_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN2_RX0_IRQn 0 */
@@ -286,10 +302,12 @@ void CAN2_RX0_IRQHandler(void)
 
   /* USER CODE END CAN2_RX0_IRQn 1 */
 }
-
+#endif
 /**
   * @brief This function handles CAN2 SCE interrupt.
   */
+
+#ifndef BOOTSTUB_
 void CAN2_SCE_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN2_SCE_IRQn 0 */
@@ -300,6 +318,7 @@ void CAN2_SCE_IRQHandler(void)
 
   /* USER CODE END CAN2_SCE_IRQn 1 */
 }
+#endif
 
 /* USER CODE BEGIN 1 */
 
