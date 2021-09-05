@@ -20,6 +20,15 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
+#include "config.h"
+#include "critical.h"
+
+#include "early_init.h"
+
+void __initialize_hardware_early(void) {
+  early_initialization();
+}
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -48,32 +57,6 @@ IWDG_HandleTypeDef hiwdg;
 
 /* USER CODE BEGIN PV */
 // ********************* Critical section helpers *********************
-typedef char bool;
-#define false 0
-#define true 1
-
-volatile bool interrupts_enabled = false;
-
-void enable_interrupts(void) {
-  interrupts_enabled = true;
-  __enable_irq();
-}
-
-void disable_interrupts(void) {
-  interrupts_enabled = false;
-  __disable_irq();
-}
-
-uint8_t global_critical_depth = 0U;
-#define ENTER_CRITICAL()                                      \
-  __disable_irq();                                            \
-  global_critical_depth += 1U;
-
-#define EXIT_CRITICAL()                                       \
-  global_critical_depth -= 1U;                                \
-  if ((global_critical_depth == 0U) && interrupts_enabled) {  \
-    __enable_irq();                                           \
-  }
 
 typedef struct {
   uint32_t Id;
@@ -191,7 +174,7 @@ CAN_HandleTypeDef *can_handles[] = {&hcan1, &hcan2};
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
+//static void MX_GPIO_Init(void);
 static void MX_CAN1_Init(void);
 static void MX_CAN2_Init(void);
 static void MX_TIM6_Init(void);
@@ -339,7 +322,7 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  MX_GPIO_Init();
+  //MX_GPIO_Init();
   MX_CAN1_Init();
   MX_CAN2_Init();
   MX_TIM6_Init();
@@ -649,6 +632,7 @@ static void MX_TIM6_Init(void)
   * @param None
   * @retval None
   */
+#if 0
 static void MX_GPIO_Init(void)
 {
 
@@ -658,6 +642,7 @@ static void MX_GPIO_Init(void)
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOB);
 
 }
+#endif
 
 /* USER CODE BEGIN 4 */
 

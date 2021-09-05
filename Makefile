@@ -160,7 +160,8 @@ LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BU
 BSLDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(BSTARGET).map,--cref -Wl,--gc-sections
 
 # default action: build all
-all: $(BUILD_DIR)/$(BSTARGET).elf $(BUILD_DIR)/$(BSTARGET).hex $(BUILD_DIR)/$(BSTARGET).bin $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
+all: $(BUILD_DIR)/$(BSTARGET).elf $(BUILD_DIR)/$(BSTARGET).hex $(BUILD_DIR)/$(BSTARGET).bin \
+	$(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
 
 
 #######################################
@@ -180,7 +181,7 @@ $(BUILD_DIR)/rsa.o \
 $(BUILD_DIR)/sha.o \
 $(COMMOBJECTS) 
 
-OBJECTS = $(BUILD_DIR)/main.o + $(COMMOBJECTS) 
+OBJECTS = $(BUILD_DIR)/main.o $(COMMOBJECTS) 
 
 $(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR) 
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@

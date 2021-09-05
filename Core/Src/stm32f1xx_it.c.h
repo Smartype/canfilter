@@ -58,7 +58,7 @@
 /* External variables --------------------------------------------------------*/
 extern CAN_HandleTypeDef hcan1;
 
-#ifndef BOOTSTUB_
+#ifndef BOOTSTUB
 extern CAN_HandleTypeDef hcan2;
 extern TIM_HandleTypeDef htim6;
 #endif
@@ -258,7 +258,7 @@ void CAN1_SCE_IRQHandler(void)
 /**
   * @brief This function handles TIM6 global interrupt.
   */
-#ifndef BOOTSTUB_
+#ifndef BOOTSTUB
 void TIM6_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM6_IRQn 0 */
@@ -274,7 +274,7 @@ void TIM6_IRQHandler(void)
 /**
   * @brief This function handles CAN2 TX interrupt.
   */
-#ifndef BOOTSTUB_
+#ifndef BOOTSTUB
 void CAN2_TX_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN2_TX_IRQn 0 */
@@ -291,7 +291,7 @@ void CAN2_TX_IRQHandler(void)
 /**
   * @brief This function handles CAN2 RX0 interrupt.
   */
-#ifndef BOOTSTUB_
+#ifndef BOOTSTUB
 void CAN2_RX0_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN2_RX0_IRQn 0 */
@@ -307,7 +307,7 @@ void CAN2_RX0_IRQHandler(void)
   * @brief This function handles CAN2 SCE interrupt.
   */
 
-#ifndef BOOTSTUB_
+#ifndef BOOTSTUB
 void CAN2_SCE_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN2_SCE_IRQn 0 */

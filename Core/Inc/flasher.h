@@ -34,7 +34,9 @@ void flash_unlock(void) {
   FLASH->KEYR = 0xCDEF89AB;
 }
 
+// TODO: add sector support
 bool flash_erase_sector(uint8_t sector, bool unlocked) {
+#if 0
   // don't erase the bootloader(sector 0)
   if (sector != 0 && sector < 12 && unlocked) {
     FLASH->CR = (sector << 3) | FLASH_CR_SER;
@@ -42,14 +44,18 @@ bool flash_erase_sector(uint8_t sector, bool unlocked) {
     while (FLASH->SR & FLASH_SR_BSY);
     return true;
   }
+#endif
   return false;
 }
 
+// TODO: add write
 void flash_write_word(void *prog_ptr, uint32_t data) {
+#if 0
   uint32_t *pp = prog_ptr;
   FLASH->CR = FLASH_CR_PSIZE_1 | FLASH_CR_PG;
   *pp = data;
   while (FLASH->SR & FLASH_SR_BSY);
+#endif
 }
 
 void flush_write_buffer(void) { }
