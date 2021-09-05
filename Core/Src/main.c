@@ -75,7 +75,6 @@ uint8_t global_critical_depth = 0U;
     __enable_irq();                                           \
   }
 
-
 typedef struct {
   uint32_t Id;
   uint8_t Size;
@@ -231,51 +230,40 @@ void process_can(uint8_t can_number)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   // Check which version of the timer triggered this callback and toggle LED
-#if 0
-  CAN1->sTxMailBox[0].TDLR = Tick ++; 
-  CAN1->sTxMailBox[0].TDHR = 0xdeadbeef;
-  CAN1->sTxMailBox[0].TDTR = 0x8;
-  CAN1->sTxMailBox[0].TIR = (0xab << 21)|1;
-#endif
+  // called at 100Hz
 }
 
 void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
 {
   can_txd_cnt ++;
-  uint8_t can_number = CAN_NUM_FROM_CANHANDLE(hcan); 
-  process_can(can_number);
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
 }
 
 void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan)
 {
   can_txd_cnt ++;
-  uint8_t can_number = CAN_NUM_FROM_CANHANDLE(hcan); 
-  process_can(can_number);
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
 }
 
 void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan)
 {
   can_txd_cnt ++;
-  uint8_t can_number = CAN_NUM_FROM_CANHANDLE(hcan); 
-  process_can(can_number);
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
 }
 
 void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  uint8_t can_number = CAN_NUM_FROM_CANHANDLE(hcan); 
-  process_can(can_number);
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
 }
 
 void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  uint8_t can_number = CAN_NUM_FROM_CANHANDLE(hcan); 
-  process_can(can_number);
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
 }
 
 void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  uint8_t can_number = CAN_NUM_FROM_CANHANDLE(hcan); 
-  process_can(can_number);
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
 }
 
 void HAL_CAN_SleepCallback(CAN_HandleTypeDef *hcan)
