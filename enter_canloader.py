@@ -6,7 +6,7 @@ from panda import CanHandle
 
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description='Flash pedal over can')
+  parser = argparse.ArgumentParser(description='Flash can-filter over can')
   parser.add_argument('--recover', action='store_true')
   parser.add_argument("fn", type=str, nargs='?', help="flash file")
   args = parser.parse_args()
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     p.can_send(0x2fe, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x0a", 0)
 
   if args.fn:
-    time.sleep(0.1)
+    time.sleep(1)
     print("flashing", args.fn)
     code = open(args.fn, "rb").read()
     Panda.flash_static(CanHandle(p, 0), code)

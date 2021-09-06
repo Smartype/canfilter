@@ -1,5 +1,5 @@
 // flasher state variables
-uint16_t *prog_ptr = NULL;
+uint32_t *prog_ptr = NULL;
 bool unlocked = false;
 CAN_HandleTypeDef hcan1;
 typedef union {
@@ -30,36 +30,44 @@ bool flash_is_locked(void) {
 }
 
 void flash_unlock(void) {
-  FLASH->KEYR = 0x45670123;
-  FLASH->KEYR = 0xCDEF89AB;
+  HAL_FLASH_Unlock();
 }
 
-void FLASH_PageErase(uint32_t PageAddress);
+void flash_lock(void) {
+  HAL_FLASH_Lock();
+}
+
 bool flash_erase_sector(uint8_t sector, bool unlocked) {
   // don't erase the bootloader(sector 0)
   if (sector != 0 && sector < 12 && unlocked) {
     // 1 sector is 16k, for 105, page is 2k
-    uint32_t fst_page = sector * 16 / 2;
-    for (int i = 0; i < 8; i ++)
+    #define SECTOR_SIZE (16 * 1024)
+    uint32_t fst_page = sector * SECTOR_SIZE / FLASH_PAGE_SIZE;
+    FLASH_EraseInitTypeDef erase;
+    erase.TypeErase = FLASH_TYPEERASE_PAGES;
+    erase.PageAddress = FLASH_BASE + fst_page * FLASH_PAGE_SIZE;
+    erase.NbPages = SECTOR_SIZE / FLASH_PAGE_SIZE;
+    #undef SECTOR_SIZE
+
+    uint32_t PageError;
+    if (HAL_FLASHEx_Erase(&erase, &PageError) != HAL_OK)
     {
-        FLASH_PageErase(FLASH_BASE + fst_page * i * 2048);
-        while (FLASH->SR & FLASH_SR_BSY);
+        Error_Handler();
     }
+
+    while (FLASH->SR & FLASH_SR_BSY);
     return true;
   }
   return false;
 }
 
-void flash_write_halfword(void *prog_ptr, uint16_t data) {
-  uint16_t *pp = prog_ptr;
-  FLASH->CR = FLASH_CR_PG;
-  *pp = data;
-  while (FLASH->SR & FLASH_SR_BSY);
+void flash_write_word(void *prog_ptr, uint32_t data) {
+  HAL_FLASH_Program(TYPEPROGRAM_WORD, (uint32_t)prog_ptr, data);
 }
 
 void flush_write_buffer(void) { }
 
-int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) {
+int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
   int resp_len = 0;
 
   // flasher machine
@@ -84,7 +92,7 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
         resp[1] = 0xff;
       }
       unlocked = true;
-      prog_ptr = (uint16_t*)(uint32_t *)APP_START_ADDRESS;
+      prog_ptr = (uint32_t*)APP_START_ADDRESS;
       break;
     // **** 0xb2: erase sector
     case 0xb2:
@@ -112,6 +120,7 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
     // **** 0xd8: reset ST
     case 0xd8:
       flush_write_buffer();
+      flash_lock();
       NVIC_SystemReset();
       break;
   }
@@ -120,8 +129,8 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
 
 void usb_cb_ep2_out(void *usbdata, int len, bool hardwired) {
   UNUSED(hardwired);
-  for (int i = 0; i < len/2; i++) {
-    flash_write_halfword(prog_ptr, *(uint16_t*)(usbdata+(i*2)));
+  for (int i = 0; i < len/4; i++) {
+    flash_write_word(prog_ptr, *(uint32_t*)(usbdata+(i*4)));
     prog_ptr++;
   }
 }
@@ -133,7 +142,7 @@ int spi_cb_rx(uint8_t *data, int len, uint8_t *data_out) {
   switch (data[0]) {
     case 0:
       // control transfer
-      resp_len = usb_cb_control_msg((USB_Setup_TypeDef *)(data+4), data_out, 0);
+      resp_len = usb_cb_control_msg((USB_Setup_TypeDef *)(data+4), data_out);
       break;
     case 2:
       // ep 2, flash!
@@ -174,6 +183,7 @@ void bl_can_send(uint8_t *odat) {
 }
 
 void CAN1_RX0_IRQHandler(void) {
+  ENTER_CRITICAL();
   while (CAN1->RF0R & CAN_RF0R_FMP0) {
     if ((CAN1->sFIFOMailBox[0].RIR>>21) == CAN_BL_INPUT) {
       uint8_t dat[8];
@@ -246,6 +256,7 @@ void CAN1_RX0_IRQHandler(void) {
     // next
     CAN1->RF0R |= CAN_RF0R_RFOM0;
   }
+  EXIT_CRITICAL();
 }
 
 void llcan_clear_send(CAN_TypeDef *CAN_obj) {
@@ -256,7 +267,9 @@ void llcan_clear_send(CAN_TypeDef *CAN_obj) {
 }
 
 void CAN1_SCE_IRQHandler(void) {
+  ENTER_CRITICAL();
   llcan_clear_send(CAN1);
+  EXIT_CRITICAL();
 }
 
 static void MX_CAN1_Init(void)
@@ -301,7 +314,7 @@ void soft_flasher_start(void) {
  
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig1;
-  sFilterConfig1.FilterBank = 14;
+  sFilterConfig1.FilterBank = 0;
   sFilterConfig1.FilterMode = CAN_FILTERMODE_IDMASK;
   sFilterConfig1.FilterScale = CAN_FILTERSCALE_32BIT;
   sFilterConfig1.FilterIdHigh = 0x0000;
@@ -329,15 +342,16 @@ void soft_flasher_start(void) {
   if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING |
               CAN_IT_RX_FIFO1_MSG_PENDING |
               CAN_IT_TX_MAILBOX_EMPTY |
-              CAN_IT_ERROR |
-              CAN_IT_LAST_ERROR_CODE |
-              CAN_IT_ERROR_PASSIVE |
-              CAN_IT_ERROR_WARNING) != HAL_OK)
+              CAN_IT_ERROR) != HAL_OK)
   {
     /* Notification Error */
     Error_Handler();
   }
 
   enable_interrupts();
+
+  while (true)
+  {
+  }
 }
 

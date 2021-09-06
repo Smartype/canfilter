@@ -64,9 +64,10 @@ IWDG_HandleTypeDef hiwdg;
 uint8_t low_speed_lockout = 3;
 bool stock_aeb_active = false;
 
-// 2 seconds
-#define MAX_ACC_TIMEOUT 200
-int acc_timeout = MAX_ACC_TIMEOUT;
+#define MAX_ACC_TIMEOUT 2000
+
+int acc_timeout_millis = MAX_ACC_TIMEOUT;
+uint8_t tick_count = 0;
 
 /* USER CODE BEGIN PV */
 // ********************* Critical section helpers *********************
@@ -189,6 +190,18 @@ static void MX_IWDG_Init(void);
 
 /* USER CODE END PFP */
 
+// Toyota Checksum algorithm
+uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
+  int cksum = 0;
+  for(int ii = 0; ii < (len - 1); ii++){
+    cksum = (cksum + dat[ii]);
+  }
+  cksum += len;
+  cksum += ((addr >> 8U) & 0xFF); // idh
+  cksum += ((addr) & 0xFF); // idl
+  return cksum & 0xFF;
+}
+
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void process_can(uint8_t can_number)
@@ -221,11 +234,28 @@ void process_can(uint8_t can_number)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+  (void)htim;
   // Check which version of the timer triggered this callback and toggle LED
-  // called at 100Hz
-  if (acc_timeout < MAX_ACC_TIMEOUT)
+  // called at 50Hz/20 millis
+  if (acc_timeout_millis < MAX_ACC_TIMEOUT)
   {
-      acc_timeout ++;
+      acc_timeout_millis += 20;
+  }
+
+  // 10Hz
+  if (++ tick_count >= 50)
+  {
+    tick_count = 0;
+
+    CANMessage to_fwd;
+    to_fwd.Size = CAN_FILTER_SIZE;
+    to_fwd.Id = CAN_FILTER_OUTPUT;
+    uint16_t uptime = HAL_GetTick() / 1000;
+    to_fwd.Data[0] = (uptime & 0xFF00) >> 8;
+    to_fwd.Data[1] = (uptime & 0xFF);
+    to_fwd.Data[7] = toyota_checksum(CAN_FILTER_OUTPUT, to_fwd.Data, 8);
+    can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
+    process_can(0);
   }
 }
 
@@ -276,18 +306,6 @@ void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
   HAL_CAN_ResetError(hcan);
 }
 
-// Toyota Checksum algorithm
-uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
-  int cksum = 0;
-  for(int ii = 0; ii < (len - 1); ii++){
-    cksum = (cksum + dat[ii]);
-  }
-  cksum += len;
-  cksum += ((addr >> 8U) & 0xFF); // idh
-  cksum += ((addr) & 0xFF); // idl
-  return cksum & 0xFF;
-}
-
 void can_rx(uint8_t can_number)
 {
   CAN_HandleTypeDef* handle = CANHANDLE_FROM_CAN_NUM(can_number);
@@ -297,6 +315,7 @@ void can_rx(uint8_t can_number)
   if (HAL_CAN_GetRxMessage(handle, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
   {
     /* Reception Error */
+    can_rx_errs ++;
     Error_Handler();
   }
   
@@ -338,7 +357,7 @@ void can_rx(uint8_t can_number)
     // ACC control msg on can 0, EON is sending
     else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
     {
-      acc_timeout = 0;
+      acc_timeout_millis = 0;
     }
   }
   else
@@ -355,7 +374,7 @@ void can_rx(uint8_t can_number)
       if (!stock_aeb_active)
       {
         // EON is sending, ignore this msg
-        if (acc_timeout < MAX_ACC_TIMEOUT)
+        if (acc_timeout_millis < MAX_ACC_TIMEOUT)
           return;
 
         // initializing, inject fake msg
@@ -719,7 +738,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 7199;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 99;
+  htim6.Init.Period = 199;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {

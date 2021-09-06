@@ -35,6 +35,6 @@ def main():
   while True:
     for i in [0, 1]:
       p.can_send(100, b'\xab\x12', i)
-      time.sleep(0.2)
+      time.sleep(0.5)
 
 main()
