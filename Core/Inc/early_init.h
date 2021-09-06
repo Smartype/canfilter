@@ -20,13 +20,20 @@ void jump_to_bootloader(void) {
   NVIC_SystemReset();
 }
 
-static void MX_GPIO_Init(void)
+void early_gpio_float(void)
 {
-
   /* GPIO Ports Clock Enable */
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOD);
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOA);
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOB);
+
+  // Analog mode, Input mode (reset state)
+  GPIOA->CRL = 0x44444444; GPIOA->CRH = 0x44444444;
+  GPIOB->CRL = 0x44444444; GPIOB->CRH = 0x44444444;
+  GPIOD->CRL = 0x44444444; GPIOD->CRH = 0x44444444;
+
+  // low
+  GPIOA->ODR = 0; GPIOB->ODR = 0; GPIOD->ODR = 0;
 }
 
 void early_initialization(void) {
@@ -44,9 +51,9 @@ void early_initialization(void) {
 
   // if wrong chip, reboot
   volatile unsigned int id = DBGMCU->IDCODE;
-    if ((id & 0xFFFU) != MCU_IDCODE) {
-      enter_bootloader_mode = ENTER_BOOTLOADER_MAGIC;
-    }
+  if ((id & 0xFFFU) != MCU_IDCODE) {
+    enter_bootloader_mode = ENTER_BOOTLOADER_MAGIC;
+  }
 
   // setup interrupt table
   SCB->VTOR = (uint32_t)&g_pfnVectors;
@@ -54,10 +61,9 @@ void early_initialization(void) {
   HAL_Init();
 
   // early GPIOs float everything
-  MX_GPIO_Init();
+  early_gpio_float();
 
   if (enter_bootloader_mode == ENTER_BOOTLOADER_MAGIC) {
     jump_to_bootloader();
   }
 }
-

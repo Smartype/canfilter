@@ -45,8 +45,8 @@ defined in linker script */
 .word _sbss
 /* end address for the .bss section. defined in linker script */
 .word _ebss
-
-.equ  BootRAM, 0xF1E0F85F
+/* ERIC */
+/*.equ  BootRAM, 0xF1E0F85F*/
 /**
  * @brief  This is the code that gets called when the processor first
  *          starts execution following a reset event. Only the absolutely
@@ -94,9 +94,11 @@ LoopFillZerobss:
   cmp r2, r4
   bcc FillZerobss
 /* Call the clock system intitialization function.*/
-    bl  SystemInit
+  // ERIC
+/*    bl  SystemInit */
 /* Call static constructors */
-  bl __libc_init_array
+  // ERIC
+/*  bl __libc_init_array */
 /* Call the application's entry point.*/
   bl main
   bx lr
@@ -248,8 +250,11 @@ g_pfnVectors:
   .word 0
   .word 0
   .word 0
+  /* ERIC */
+#if 0
   .word BootRAM     /* @0x1E0. This is for boot in RAM mode for
                          STM32F10x Connectivity line Devices. */
+#endif
 
 /*******************************************************************************
 *

@@ -25,6 +25,12 @@
 
 #include "early_init.h"
 
+#include "stm32f1xx_it.c.h"
+
+#define CAN_FILTER_INPUT    0x2feU
+#define CAN_FILTER_OUTPUT   0x2fdU
+#define CAN_FILTER_SIZE     8
+
 void __initialize_hardware_early(void) {
   early_initialization();
 }
@@ -55,6 +61,13 @@ TIM_HandleTypeDef htim6;
 
 IWDG_HandleTypeDef hiwdg;
 
+uint8_t low_speed_lockout = 3;
+bool stock_aeb_active = false;
+
+// 2 seconds
+#define MAX_ACC_TIMEOUT 200
+int acc_timeout = MAX_ACC_TIMEOUT;
+
 /* USER CODE BEGIN PV */
 // ********************* Critical section helpers *********************
 
@@ -70,13 +83,6 @@ typedef struct {
   uint32_t fifo_size;
   CANMessage *elems;
 } can_ring;
-
-CAN_RxHeaderTypeDef   RxHeader;
-CAN_TxHeaderTypeDef   TxHeader;
-uint8_t               TxData[8];
-uint8_t               RxData[8];
-uint32_t              TxMailbox;
-uint32_t              Tick;
 
 uint32_t can_rx_errs = 0;
 uint32_t can_send_errs = 0;
@@ -174,7 +180,7 @@ CAN_HandleTypeDef *can_handles[] = {&hcan1, &hcan2};
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-//static void MX_GPIO_Init(void);
+static void MX_GPIO_Init(void);
 static void MX_CAN1_Init(void);
 static void MX_CAN2_Init(void);
 static void MX_TIM6_Init(void);
@@ -194,12 +200,15 @@ void process_can(uint8_t can_number)
     if (!can_pop(can_queues[can_number], &to_send))
       break;
 
+    CAN_TxHeaderTypeDef TxHeader;
     TxHeader.RTR = CAN_RTR_DATA;
     TxHeader.IDE = CAN_ID_STD;
     TxHeader.TransmitGlobalTime = DISABLE;
     TxHeader.ExtId = 0x001;
     TxHeader.StdId = to_send.Id;
     TxHeader.DLC = to_send.Size;
+
+    uint32_t TxMailbox;
     if (HAL_CAN_AddTxMessage(handle, &TxHeader, to_send.Data, &TxMailbox) != HAL_OK)
     {
       /* Transmission request Error */
@@ -214,6 +223,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   // Check which version of the timer triggered this callback and toggle LED
   // called at 100Hz
+  if (acc_timeout < MAX_ACC_TIMEOUT)
+  {
+      acc_timeout ++;
+  }
 }
 
 void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
@@ -260,25 +273,118 @@ void HAL_CAN_WakeUpFromRxMsgCallback(CAN_HandleTypeDef *hcan)
 void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
 {
   can_err_cnt ++;
+  HAL_CAN_ResetError(hcan);
+}
+
+// Toyota Checksum algorithm
+uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
+  int cksum = 0;
+  for(int ii = 0; ii < (len - 1); ii++){
+    cksum = (cksum + dat[ii]);
+  }
+  cksum += len;
+  cksum += ((addr >> 8U) & 0xFF); // idh
+  cksum += ((addr) & 0xFF); // idl
+  return cksum & 0xFF;
 }
 
 void can_rx(uint8_t can_number)
 {
   CAN_HandleTypeDef* handle = CANHANDLE_FROM_CAN_NUM(can_number);
+  CAN_RxHeaderTypeDef   RxHeader;
+  uint8_t               RxData[8];
   /* Get RX message */
   if (HAL_CAN_GetRxMessage(handle, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
   {
     /* Reception Error */
     Error_Handler();
   }
-
+  
   can_rx_cnt ++;
+
+  if (can_number == 0)
+  {
+    // internal magic msg
+    if (RxHeader.StdId == CAN_FILTER_INPUT && RxHeader.DLC == CAN_FILTER_SIZE)
+    {
+      // magic
+      if (memcmp(RxData, "\xce\xfa\xad\xde", 4) == 0)
+      {
+        // bootloader
+        if (memcmp(RxData + 4, "\x1e\x0b\xb0\x02", 4) == 0)
+        {
+          enter_bootloader_mode = ENTER_BOOTLOADER_MAGIC;
+          NVIC_SystemReset();
+        }
+        // softloader
+        else if (memcmp(RxData + 4, "\x1e\x0b\xb0\x0a", 4) == 0)
+        {
+          enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
+          NVIC_SystemReset();
+        }
+        // reset
+        else if (memcmp(RxData + 4, "\x1e\x0b\xb0\x01", 4) == 0)
+        {
+          NVIC_SystemReset();
+        }
+      }
+      return;
+    }
+    // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
+    else if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
+    {
+      low_speed_lockout = (RxData[1] >> 5) & 0x3;
+    }
+    // ACC control msg on can 0, EON is sending
+    else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+    {
+      acc_timeout = 0;
+    }
+  }
+  else
+  {
+    // AEB BRAKING
+    if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
+    {
+      uint16_t stock_aeb = ((RxData[0] << 8U) | RxData[1]) >> 6U;
+      stock_aeb_active = (stock_aeb != 0);
+    }
+    // ACC CONTROL
+    else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+    {
+      if (!stock_aeb_active)
+      {
+        // EON is sending, ignore this msg
+        if (acc_timeout < MAX_ACC_TIMEOUT)
+          return;
+
+        // initializing, inject fake msg
+        if (low_speed_lockout == 3)
+        {
+          const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
+          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x43, 0x00, 0x00, 0x00, 0x00, 0x91 }; // CH-R init1
+          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x63, 0xC0, 0x00, 0x00, 0x00, 0x71 }; // CH-R SmartDSU
+          memcpy(RxData, acc_control_msg, 8);
+        }
+        else
+        {
+          // use stock msg, but update acc type
+          RxData[2] &= 0x3F;
+          RxData[2] |= 0x40;
+
+          // update checksum
+          RxData[7] = toyota_checksum(0x343, RxData, 8);
+        }
+      }
+    }
+  }
+
   CANMessage to_fwd;
   to_fwd.Size = RxHeader.DLC;
   to_fwd.Id = RxHeader.StdId;
   memcpy(to_fwd.Data, RxData, to_fwd.Size);
 
-  uint8_t fwd_can = (can_number == 0)? 1 : 0;
+  uint8_t fwd_can = (can_number == 0) ? 1 : 0;
   can_fwd_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
   process_can(fwd_can);
 }
@@ -308,6 +414,8 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_DeInit();
+
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -322,14 +430,12 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  //MX_GPIO_Init();
+  MX_GPIO_Init();
   MX_CAN1_Init();
   MX_CAN2_Init();
   MX_TIM6_Init();
   //MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
-
-  enable_interrupts();
 
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig1;
@@ -418,11 +524,14 @@ int main(void)
     Error_Handler();
   }
 
+  enable_interrupts();
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     /* USER CODE END WHILE */
+    // feed the dog
     //HAL_IWDG_Refresh(&hiwdg);
     /* USER CODE BEGIN 3 */
   }
@@ -632,7 +741,6 @@ static void MX_TIM6_Init(void)
   * @param None
   * @retval None
   */
-#if 0
 static void MX_GPIO_Init(void)
 {
 
@@ -642,7 +750,6 @@ static void MX_GPIO_Init(void)
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOB);
 
 }
-#endif
 
 /* USER CODE BEGIN 4 */
 

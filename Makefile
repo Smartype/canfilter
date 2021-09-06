@@ -21,7 +21,7 @@ TARGET = CanFilter
 # building variables
 ######################################
 # debug build?
-DEBUG = 0
+DEBUG = 1
 # optimization
 OPT = -Og
 
@@ -65,7 +65,7 @@ Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_iwdg.c
 
 C_SOURCES = Core/Src/main.c
 
-BS_C_SOURCES = Core/Src/boot_stub.c \
+BS_C_SOURCES = Core/Src/bootstub.c \
 Core/Src/rsa.c \
 Core/Src/sha.c 
 
@@ -161,7 +161,8 @@ BSLDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(
 
 # default action: build all
 all: $(BUILD_DIR)/$(BSTARGET).elf $(BUILD_DIR)/$(BSTARGET).hex $(BUILD_DIR)/$(BSTARGET).bin \
-	$(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
+	$(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin \
+	$(BUILD_DIR)/$(TARGET).bin.signed
 
 
 #######################################
@@ -176,7 +177,7 @@ vpath %.c $(sort $(dir $(COMM_C_SOURCES)))
 COMMOBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
 vpath %.s $(sort $(dir $(ASM_SOURCES)))
 
-BSOBJECTS = $(BUILD_DIR)/boot_stub.o \
+BSOBJECTS = $(BUILD_DIR)/bootstub.o \
 $(BUILD_DIR)/rsa.o \
 $(BUILD_DIR)/sha.o \
 $(COMMOBJECTS) 
@@ -202,7 +203,10 @@ $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 	
 $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 	$(BIN) $< $@	
-	
+
+$(BUILD_DIR)/$(TARGET).bin.signed: $(BUILD_DIR)/$(TARGET).bin
+	SETLEN=1 ./sign.py $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).bin.signed ./Core/Src/certs/debug
+
 $(BUILD_DIR):
 	mkdir $@		
 
