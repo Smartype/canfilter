@@ -27,6 +27,8 @@
 
 #include "stm32f1xx_it.c.h"
 
+#define ENABLE_ACC_INIT_MAGIC      true
+
 #define CAN_FILTER_INPUT    0x2feU
 #define CAN_FILTER_OUTPUT   0x2fdU
 #define CAN_FILTER_SIZE     8
@@ -54,6 +56,17 @@ void __initialize_hardware_early(void) {
 
 /* USER CODE END PM */
 
+uint32_t can_rx_errs = 0;
+uint32_t can_send_errs = 0;
+uint32_t can_fwd_errs = 0;
+
+int can_rx_cnt = 0;
+int can_tx_cnt = 0;
+int can_txd_cnt = 0;
+int can_err_cnt = 0;
+int can_overflow_cnt = 0;
+
+
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan1;
 CAN_HandleTypeDef hcan2;
@@ -64,14 +77,164 @@ IWDG_HandleTypeDef hiwdg;
 uint8_t low_speed_lockout = 3;
 bool stock_aeb_active = false;
 
-#define MAX_ACC_TIMEOUT 2000
+// max 1000ms
+#define MAX_ACC_CONTROL_TIMEOUT 1000
 
-int acc_timeout_millis = MAX_ACC_TIMEOUT;
+uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
 uint8_t tick_count = 0;
+bool debug_uart_ready = false;
 
 /* USER CODE BEGIN PV */
 // ********************* Critical section helpers *********************
 
+// debug uart
+#define DEBUG_FIFO_SIZE 0x400U
+
+typedef struct uart_ring {
+  volatile uint16_t w_ptr_tx;
+  volatile uint16_t r_ptr_tx;
+  uint8_t *elems_tx;
+  uint32_t tx_fifo_size;
+} uart_ring;
+
+#define UART_BUFFER(x, size_tx) \
+  uint8_t elems_tx_##x[size_tx]; \
+  uart_ring uart_ring_##x = {  \
+    .w_ptr_tx = 0, \
+    .r_ptr_tx = 0, \
+    .elems_tx = ((uint8_t *)&(elems_tx_##x)), \
+    .tx_fifo_size = (size_tx), \
+  };
+
+// ***************************** Function prototypes *****************************
+
+// ******************************** UART buffers ********************************
+UART_BUFFER(debug, DEBUG_FIFO_SIZE)
+
+void uart_tx_ring(uart_ring *q)
+{
+  if (q->w_ptr_tx == q->r_ptr_tx)
+  {
+    return;
+  }
+
+  CAN_TxHeaderTypeDef TxHeader;
+  TxHeader.RTR = CAN_RTR_DATA;
+  TxHeader.IDE = CAN_ID_STD;
+  TxHeader.TransmitGlobalTime = DISABLE;
+  TxHeader.ExtId = 0x001;
+  TxHeader.StdId = CAN_FILTER_OUTPUT;
+  TxHeader.DLC = 1;
+  uint8_t Data[8];
+
+  // log
+  Data[0] = 0x10;
+  uint32_t TxMailbox;
+
+  ENTER_CRITICAL();
+  while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) &&
+          q->w_ptr_tx != q->r_ptr_tx &&
+          TxHeader.DLC < 8)
+  {
+    Data[TxHeader.DLC++] = q->elems_tx[q->r_ptr_tx];
+    q->r_ptr_tx = (q->r_ptr_tx + 1U) % q->tx_fifo_size;
+  }
+
+  if (TxHeader.DLC > 1)
+  {
+    if (HAL_CAN_AddTxMessage(&hcan1, &TxHeader, Data, &TxMailbox) != HAL_OK)
+    {
+      /* Transmission request Error */
+      Error_Handler();
+    }
+
+    can_tx_cnt ++;
+  }
+
+  EXIT_CRITICAL();
+}
+
+void clear_uart_buff(uart_ring *q) {
+  ENTER_CRITICAL();
+  q->w_ptr_tx = 0;
+  q->r_ptr_tx = 0;
+  EXIT_CRITICAL();
+}
+
+bool putc(uart_ring *q, char elem) {
+  if (!debug_uart_ready)
+    return false;
+
+  bool ret = false;
+  uint16_t next_w_ptr;
+
+  ENTER_CRITICAL();
+  next_w_ptr = (q->w_ptr_tx + 1U) % q->tx_fifo_size;
+  if (next_w_ptr != q->r_ptr_tx) {
+    q->elems_tx[q->w_ptr_tx] = elem;
+    q->w_ptr_tx = next_w_ptr;
+    ret = true;
+  }
+  EXIT_CRITICAL();
+  //uart_tx_ring(q);
+  return ret;
+}
+
+void putch(const char a) {
+  // do not lock the cpu
+  //while (!putc(&uart_ring_debug, a));
+  putc(&uart_ring_debug, a);
+}
+
+void puts(const char *a) {
+  for (const char *in = a; *in; in++) {
+    if (*in == '\n') putch('\r');
+    putch(*in);
+  }
+}
+
+void putui(uint32_t i) {
+  uint32_t i_copy = i;
+  char str[11];
+  uint8_t idx = 10;
+  str[idx] = '\0';
+  idx--;
+  do {
+    str[idx] = (i_copy % 10U) + 0x30U;
+    idx--;
+    i_copy /= 10;
+  } while (i_copy != 0U);
+  puts(&str[idx + 1U]);
+}
+
+void puth(unsigned int i) {
+  const char c[] = "0123456789abcdef";
+  for (int pos = 28; pos != -4; pos -= 4) {
+    putch(c[(i >> (unsigned int)(pos)) & 0xFU]);
+  }
+}
+
+void puth2(unsigned int i) {
+  const char c[] = "0123456789abcdef";
+  for (int pos = 4; pos != -4; pos -= 4) {
+    putch(c[(i >> (unsigned int)(pos)) & 0xFU]);
+  }
+}
+
+void hexdump(const void *a, int l) {
+  if (a != NULL) {
+    for (int i=0; i < l; i++) {
+      if ((i != 0) && ((i & 0xf) == 0)) puts("\n");
+      puth2(((const unsigned char*)a)[i]);
+      puts(" ");
+    }
+  }
+  puts("\n");
+}
+
+
+
+// global CAN stats
 typedef struct {
   uint32_t Id;
   uint8_t Size;
@@ -84,17 +247,6 @@ typedef struct {
   uint32_t fifo_size;
   CANMessage *elems;
 } can_ring;
-
-uint32_t can_rx_errs = 0;
-uint32_t can_send_errs = 0;
-uint32_t can_fwd_errs = 0;
-
-// global CAN stats
-int can_rx_cnt = 0;
-int can_tx_cnt = 0;
-int can_txd_cnt = 0;
-int can_err_cnt = 0;
-int can_overflow_cnt = 0;
 
 #define can_buffer(x, size) \
   CANMessage elems_##x[size]; \
@@ -234,12 +386,13 @@ void process_can(uint8_t can_number)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+  ENTER_CRITICAL();
   (void)htim;
   // Check which version of the timer triggered this callback and toggle LED
   // called at 50Hz/20 millis
-  if (acc_timeout_millis < MAX_ACC_TIMEOUT)
+  if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
   {
-      acc_timeout_millis += 20;
+      acc_control_timeout += 20U;
   }
 
   // 10Hz
@@ -259,7 +412,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     ENTER_CRITICAL();
     process_can(0);
     EXIT_CRITICAL();
+
+    puts("tick: ");
+    putui(HAL_GetTick());
+    puts("\n");
   }
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
@@ -267,6 +425,7 @@ void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  uart_tx_ring(&uart_ring_debug);
   EXIT_CRITICAL();
 }
 
@@ -275,6 +434,7 @@ void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  uart_tx_ring(&uart_ring_debug);
   EXIT_CRITICAL();
 }
 
@@ -283,6 +443,7 @@ void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  uart_tx_ring(&uart_ring_debug);
   EXIT_CRITICAL();
 }
 
@@ -290,6 +451,7 @@ void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  uart_tx_ring(&uart_ring_debug);
   EXIT_CRITICAL();
 }
 
@@ -297,6 +459,7 @@ void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  uart_tx_ring(&uart_ring_debug);
   EXIT_CRITICAL();
 }
 
@@ -304,6 +467,7 @@ void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  uart_tx_ring(&uart_ring_debug);
   EXIT_CRITICAL();
 }
 
@@ -335,7 +499,7 @@ void can_rx(uint8_t can_number)
     can_rx_errs ++;
     Error_Handler();
   }
-  
+
   can_rx_cnt ++;
 
   if (can_number == 0)
@@ -374,7 +538,7 @@ void can_rx(uint8_t can_number)
     // ACC control msg on can 0, EON is sending
     else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
     {
-      acc_timeout_millis = 0;
+      acc_control_timeout = 0;
     }
   }
   else
@@ -391,9 +555,10 @@ void can_rx(uint8_t can_number)
       if (!stock_aeb_active)
       {
         // EON is sending, ignore this msg
-        if (acc_timeout_millis < MAX_ACC_TIMEOUT)
+        if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
           return;
 
+#if ENABLE_ACC_INIT_MAGIC
         // initializing, inject fake msg
         if (low_speed_lockout == 3)
         {
@@ -403,6 +568,8 @@ void can_rx(uint8_t can_number)
           memcpy(RxData, acc_control_msg, 8);
         }
         else
+#endif
+        if (toyota_checksum(0x343, RxData, 8) == RxData[7])
         {
           // use stock msg, but update acc type
           RxData[2] &= 0x3F;
@@ -427,7 +594,7 @@ void can_rx(uint8_t can_number)
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 {
-  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle));  
+  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle));
 }
 
 void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
@@ -512,6 +679,25 @@ int main(void)
     Error_Handler();
   }
 
+  /* c init, which is disabled in startup file */
+  can_rx_errs = 0;
+  can_send_errs = 0;
+  can_fwd_errs = 0;
+
+  can_rx_cnt = 0;
+  can_tx_cnt = 0;
+  can_txd_cnt = 0;
+  can_err_cnt = 0;
+  can_overflow_cnt = 0;
+
+  low_speed_lockout = 3;
+  stock_aeb_active = false;
+
+  clear_uart_buff(&uart_ring_debug);
+  debug_uart_ready = true;
+
+  puts("can filter starts!\n");
+
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig2;
   sFilterConfig2.FilterBank = 0;
@@ -569,6 +755,8 @@ int main(void)
     /* USER CODE END WHILE */
     // feed the dog
     HAL_IWDG_Refresh(&hiwdg);
+
+    uart_tx_ring(&uart_ring_debug);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
