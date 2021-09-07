@@ -1,6 +1,11 @@
 // flasher state variables
 uint32_t *prog_ptr = NULL;
 bool unlocked = false;
+uint32_t can_rx = 0;
+uint32_t can_tx = 0;
+uint32_t can_txd = 0;
+uint32_t can_err = 0;
+
 CAN_HandleTypeDef hcan1;
 typedef union {
   uint16_t w;
@@ -26,17 +31,46 @@ typedef union _USB_Setup {
 USB_Setup_TypeDef;
 
 bool flash_is_locked(void) {
+  //return true;
+
   return (FLASH->CR & FLASH_CR_LOCK);
 }
 
 void flash_unlock(void) {
+  //return;
+
   HAL_FLASH_Unlock();
 }
 
 void flash_lock(void) {
+  //return;
+
   HAL_FLASH_Lock();
 }
 
+bool flash_erase_size(uint16_t size, bool unlocked) {
+  //return true;
+
+  // max 32k
+  if (unlocked && size < 32768U) {
+    int pages = (size + FLASH_PAGE_SIZE - 1) /FLASH_PAGE_SIZE;
+    FLASH_EraseInitTypeDef erase;
+    erase.TypeErase = FLASH_TYPEERASE_PAGES;
+    erase.PageAddress = APP_START_ADDRESS;
+    erase.NbPages = pages;
+    uint32_t PageError;
+    if (HAL_FLASHEx_Erase(&erase, &PageError) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    while (FLASH->SR & FLASH_SR_BSY);
+    return true;
+  }
+  return false;
+}
+
+/*
 bool flash_erase_sector(uint8_t sector, bool unlocked) {
   // don't erase the bootloader(sector 0)
   if (sector != 0 && sector < 12 && unlocked) {
@@ -55,13 +89,16 @@ bool flash_erase_sector(uint8_t sector, bool unlocked) {
         Error_Handler();
     }
 
-    while (FLASH->SR & FLASH_SR_BSY);
+    //while (FLASH->SR & FLASH_SR_BSY);
     return true;
   }
   return false;
 }
+*/
 
 void flash_write_word(void *prog_ptr, uint32_t data) {
+  //return;
+
   HAL_FLASH_Program(TYPEPROGRAM_WORD, (uint32_t)prog_ptr, data);
 }
 
@@ -79,12 +116,13 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
   *((uint32_t **)&resp[8]) = (uint32_t*)prog_ptr;
   resp_len = 0xc;
 
-  int sec;
+  uint16_t size;
   switch (setup->b.bRequest) {
     // **** 0xb0: flasher echo
     case 0xb0:
       resp[1] = 0xff;
       break;
+
     // **** 0xb1: unlock flash
     case 0xb1:
       if (flash_is_locked()) {
@@ -94,6 +132,8 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
       unlocked = true;
       prog_ptr = (uint32_t*)APP_START_ADDRESS;
       break;
+
+/*
     // **** 0xb2: erase sector
     case 0xb2:
       sec = setup->b.wValue.w;
@@ -101,10 +141,25 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
         resp[1] = 0xff;
       }
       break;
+*/
+    
+    // **** 0xb3: erase size 
+    case 0xb3:
+      size = setup->b.wValue.w;
+      if (flash_erase_size(size, unlocked)) {
+        resp[1] = 0xff;
+      }
+      break;
+
+    // **** 0xb4: lock flash
+    case 0xb4:
+      flush_write_buffer();
+      flash_lock();
+      resp[1] = 0xff;
+      break;
+    
     // **** 0xd1: enter bootloader mode
     case 0xd1:
-      // this allows reflashing of the bootstub
-      // so it's blocked over wifi
       switch (setup->b.wValue.w) {
         case 0:
           // TODO: put this back when it's no longer a "devkit"
@@ -117,10 +172,9 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
           break;
       }
       break;
+
     // **** 0xd8: reset ST
     case 0xd8:
-      flush_write_buffer();
-      flash_lock();
       NVIC_SystemReset();
       break;
   }
@@ -156,8 +210,11 @@ int spi_cb_rx(uint8_t *data, int len, uint8_t *data_out) {
 #define CAN_BL_OUTPUT 0x2
 
 void CAN1_TX_IRQHandler(void) {
+  ENTER_CRITICAL();
   // clear interrupt
   CAN1->TSR |= CAN_TSR_RQCP0;
+  can_txd ++;
+  EXIT_CRITICAL();
 }
 
 #define ISOTP_BUF_SIZE 0x110
@@ -180,11 +237,16 @@ void bl_can_send(uint8_t *odat) {
   CAN1->sTxMailBox[0].TDHR = ((uint32_t*)odat)[1];
   CAN1->sTxMailBox[0].TDTR = 8;
   CAN1->sTxMailBox[0].TIR = (CAN_BL_OUTPUT << 21) | 1;
+
+  can_tx ++;
 }
 
 void CAN1_RX0_IRQHandler(void) {
   ENTER_CRITICAL();
+
   while (CAN1->RF0R & CAN_RF0R_FMP0) {
+    can_rx ++;
+
     if ((CAN1->sFIFOMailBox[0].RIR>>21) == CAN_BL_INPUT) {
       uint8_t dat[8];
       for (int i = 0; i < 8; i++) {
@@ -252,7 +314,12 @@ void CAN1_RX0_IRQHandler(void) {
         odat[0] = 0x30;
         bl_can_send(odat);
       }
+      else
+      {
+          Error_Handler();
+      }
     }
+
     // next
     CAN1->RF0R |= CAN_RF0R_RFOM0;
   }
@@ -267,9 +334,8 @@ void llcan_clear_send(CAN_TypeDef *CAN_obj) {
 }
 
 void CAN1_SCE_IRQHandler(void) {
-  ENTER_CRITICAL();
   llcan_clear_send(CAN1);
-  EXIT_CRITICAL();
+  can_err ++;
 }
 
 static void MX_CAN1_Init(void)
@@ -340,7 +406,6 @@ void soft_flasher_start(void) {
 
   /* Activate CAN RX notification */
   if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING |
-              CAN_IT_RX_FIFO1_MSG_PENDING |
               CAN_IT_TX_MAILBOX_EMPTY |
               CAN_IT_ERROR) != HAL_OK)
   {
@@ -352,6 +417,7 @@ void soft_flasher_start(void) {
 
   while (true)
   {
+    HAL_Delay(1000);
   }
 }
 

@@ -236,26 +236,36 @@ class Panda(object):
   def flash_can_static(handle, code):
     # confirm flasher is present
     print("flash: check flasher is present")
+
+    handle.panda().set_safety_mode(handle.panda().SAFETY_ALLOUTPUT)
     fr = handle.controlRead(Panda.REQUEST_IN, 0xb0, 0, 0, 0xc)
     assert fr[4:8] == b"\xde\xad\xd0\x0d"
+    handle.panda().send_heartbeat()
 
     # unlock flash
     print("flash: unlocking")
     handle.controlWrite(Panda.REQUEST_IN, 0xb1, 0, 0, b'', timeout=2)
+    handle.panda().send_heartbeat()
 
     # erase size
     print("flash: erasing")
     handle.controlWrite(Panda.REQUEST_IN, 0xb3, len(code), 0, b'', timeout=10)
+    handle.panda().send_heartbeat()
 
     # flash over EP2
     STEP = 0x10
     print("flash: flashing {} bytes".format(len(code)))
     for i in range(0, len(code), STEP):
-      print(f"flash: {i}")
+      pct = 100 * i // len(code)
+      sys.stdout.write(f"\rflash: {pct}% ")
       handle.bulkWrite(2, code[i:i + STEP], timeout=5)
+      handle.panda().send_heartbeat()
+    sys.stdout.write("\rflash: 100%\n")
 
     # lock flash
+    print("flash: locking")
     handle.controlWrite(Panda.REQUEST_IN, 0xb4, 0, 0, b'', timeout=2)
+    handle.panda().send_heartbeat()
 
     # reset
     print("flash: resetting")
@@ -559,8 +569,8 @@ class Panda(object):
 
   # ******************* isotp *******************
 
-  def isotp_send(self, addr, dat, bus, recvaddr=None, subaddr=None):
-    return isotp_send(self, dat, addr, bus, recvaddr, subaddr)
+  def isotp_send(self, addr, dat, bus, recvaddr=None, subaddr=None, rate=None):
+    return isotp_send(self, dat, addr, bus, recvaddr, subaddr, rate)
 
   def isotp_recv(self, addr, bus=0, sendaddr=None, subaddr=None):
     return isotp_recv(self, addr, bus, sendaddr, subaddr)

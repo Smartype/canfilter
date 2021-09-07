@@ -7,9 +7,12 @@ class CanHandle(object):
     self.p = p
     self.bus = bus
 
+  def panda(self):
+    return self.p
+
   def transact(self, dat, timeout):
     #print(f"isotp send {dat}")
-    self.p.isotp_send(1, dat, self.bus, recvaddr=2)
+    self.p.isotp_send(1, dat, self.bus, recvaddr=2, rate=None)
 
     def _handle_timeout(signum, frame):
       # will happen on reset
@@ -17,7 +20,7 @@ class CanHandle(object):
 
     signal.signal(signal.SIGALRM, _handle_timeout)
     if timeout == 0:
-      timeout = 2
+      timeout = 5
     signal.alarm(timeout)
 
     #print(f"isotp recv")

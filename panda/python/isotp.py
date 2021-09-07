@@ -63,6 +63,9 @@ def isotp_recv_subaddr(panda, addr, bus, sendaddr, subaddr):
 # **** import below this line ****
 
 def isotp_send(panda, x, addr, bus=0, recvaddr=None, subaddr=None, rate=None):
+  if DEBUG:
+    print("S:", binascii.hexlify(x))
+
   if recvaddr is None:
     recvaddr = addr + 8
 
