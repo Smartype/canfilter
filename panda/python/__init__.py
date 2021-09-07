@@ -35,7 +35,8 @@ def parse_can_buffer(dat):
       address = f1 >> 21
     dddat = ddat[8:8 + (f2 & 0xF)]
     if DEBUG:
-      print(f"  R 0x{address:x}: 0x{dddat.hex()}")
+      bus = (f2 >> 4) & 0xFF
+      print(f"  R 0x{bus:x} 0x{address:x}: 0x{dddat.hex()}")
     ret.append((address, f2 >> 16, dddat, (f2 >> 4) & 0xFF))
   return ret
 
@@ -230,6 +231,39 @@ class Panda(object):
         time.sleep(1.0)
     if not success:
       raise Exception("reconnect failed")
+
+  @staticmethod
+  def flash_can_static(handle, code):
+    # confirm flasher is present
+    print("flash: check flasher is present")
+    fr = handle.controlRead(Panda.REQUEST_IN, 0xb0, 0, 0, 0xc)
+    assert fr[4:8] == b"\xde\xad\xd0\x0d"
+
+    # unlock flash
+    print("flash: unlocking")
+    handle.controlWrite(Panda.REQUEST_IN, 0xb1, 0, 0, b'', timeout=2)
+
+    # erase size
+    print("flash: erasing")
+    handle.controlWrite(Panda.REQUEST_IN, 0xb3, len(code), 0, b'', timeout=10)
+
+    # flash over EP2
+    STEP = 0x10
+    print("flash: flashing {} bytes".format(len(code)))
+    for i in range(0, len(code), STEP):
+      print(f"flash: {i}")
+      handle.bulkWrite(2, code[i:i + STEP], timeout=5)
+
+    # lock flash
+    handle.controlWrite(Panda.REQUEST_IN, 0xb4, 0, 0, b'', timeout=2)
+
+    # reset
+    print("flash: resetting")
+    try:
+      handle.controlWrite(Panda.REQUEST_IN, 0xd8, 0, 0, b'', timeout=2)
+    except Exception:
+      pass
+
 
   @staticmethod
   def flash_static(handle, code):
@@ -478,7 +512,7 @@ class Panda(object):
     for addr, _, dat, bus in arr:
       assert len(dat) <= 8
       if DEBUG:
-        print(f"  W 0x{addr:x}: 0x{dat.hex()}")
+        print(f"  W 0x{bus:x} 0x{addr:x}: 0x{dat.hex()}")
       if addr >= 0x800:
         rir = (addr << 3) | transmit | extended
       else:
