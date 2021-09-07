@@ -213,6 +213,12 @@ $(BUILD_DIR)/$(TARGET).bin.signed: $(BUILD_DIR)/$(TARGET).bin
 $(BUILD_DIR):
 	mkdir $@		
 
+flash:
+	st-flash write $(BUILD_DIR)/CanFilter.bin.signed 0x8004000
+
+flash-bootloader:
+	st-flash write $(BUILD_DIR)/BootStub.bin 0x8000000
+
 #######################################
 # clean up
 #######################################
