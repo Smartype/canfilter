@@ -255,41 +255,56 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     to_fwd.Data[1] = (uptime & 0xFF);
     to_fwd.Data[7] = toyota_checksum(CAN_FILTER_OUTPUT, to_fwd.Data, 8);
     can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
+
+    ENTER_CRITICAL();
     process_can(0);
+    EXIT_CRITICAL();
   }
 }
 
 void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
 {
+  ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan)
 {
+  ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan)
 {
+  ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan)
 {
+  ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan)
 {
+  ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 {
+  ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_SleepCallback(CAN_HandleTypeDef *hcan)
@@ -302,8 +317,10 @@ void HAL_CAN_WakeUpFromRxMsgCallback(CAN_HandleTypeDef *hcan)
 
 void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
 {
+  ENTER_CRITICAL();
   can_err_cnt ++;
   HAL_CAN_ResetError(hcan);
+  EXIT_CRITICAL();
 }
 
 void can_rx(uint8_t can_number)
@@ -453,7 +470,7 @@ int main(void)
   MX_CAN1_Init();
   MX_CAN2_Init();
   MX_TIM6_Init();
-  //MX_IWDG_Init();
+  MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
   /* Configure the CAN Filter */
@@ -551,7 +568,7 @@ int main(void)
   {
     /* USER CODE END WHILE */
     // feed the dog
-    //HAL_IWDG_Refresh(&hiwdg);
+    HAL_IWDG_Refresh(&hiwdg);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */

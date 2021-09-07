@@ -334,8 +334,10 @@ void llcan_clear_send(CAN_TypeDef *CAN_obj) {
 }
 
 void CAN1_SCE_IRQHandler(void) {
-  llcan_clear_send(CAN1);
+  ENTER_CRITICAL();
   can_err ++;
+  llcan_clear_send(CAN1);
+  EXIT_CRITICAL();
 }
 
 static void MX_CAN1_Init(void)
