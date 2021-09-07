@@ -28,7 +28,7 @@ if __name__ == "__main__":
     time.sleep(1)
     print("flashing", args.fn)
     code = open(args.fn, "rb").read()
-    Panda.flash_static(CanHandle(p, 0), code)
+    Panda.flash_can_static(CanHandle(p, 0), code)
 
   print("can flash done")
 
