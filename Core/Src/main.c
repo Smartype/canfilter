@@ -396,7 +396,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 
   // 10Hz
-  if (++ tick_count >= 50)
+  if (++ tick_count >= 5)
   {
     tick_count = 0;
 
@@ -404,8 +404,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     to_fwd.Size = CAN_FILTER_SIZE;
     to_fwd.Id = CAN_FILTER_OUTPUT;
     uint16_t uptime = HAL_GetTick() / 1000;
-    to_fwd.Data[0] = (uptime & 0xFF00) >> 8;
-    to_fwd.Data[1] = (uptime & 0xFF);
+    to_fwd.Data[0] = 0x20;
+    to_fwd.Data[1] = (uptime & 0xFF00) >> 8;
+    to_fwd.Data[2] = (uptime & 0xFF);
     to_fwd.Data[7] = toyota_checksum(CAN_FILTER_OUTPUT, to_fwd.Data, 8);
     can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
@@ -413,9 +414,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     process_can(0);
     EXIT_CRITICAL();
 
+    /*
     puts("tick: ");
     putui(HAL_GetTick());
     puts("\n");
+    */
   }
   EXIT_CRITICAL();
 }
