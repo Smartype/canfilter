@@ -26,12 +26,16 @@
 #include "early_init.h"
 
 #include "stm32f1xx_it.c.h"
+#include "build/gitversion.h"
 
 #define ENABLE_ACC_INIT_MAGIC      true
 
+#define CAN_FILTER_SIZE     8
 #define CAN_FILTER_INPUT    0x2A0U
 #define CAN_FILTER_OUTPUT   0x2A1U
-#define CAN_FILTER_SIZE     8
+#define CAN_FILTER_MUX      (CAN_FILTER_OUTPUT + 0)
+#define CAN_FILTER_ERR      (CAN_FILTER_OUTPUT + 1)
+#define CAN_FILTER_LOG      (CAN_FILTER_OUTPUT + 2)
 
 void __initialize_hardware_early(void) {
   early_initialization();
@@ -58,14 +62,13 @@ void __initialize_hardware_early(void) {
 
 uint32_t can_rx_errs = 0;
 uint32_t can_send_errs = 0;
-uint32_t can_fwd_errs = 0;
 
-int can_rx_cnt = 0;
-int can_tx_cnt = 0;
-int can_txd_cnt = 0;
-int can_err_cnt = 0;
-int can_overflow_cnt = 0;
-
+uint32_t can_rx_cnt = 0;
+uint32_t can_tx_cnt = 0;
+uint32_t can_txd_cnt = 0;
+uint32_t can_err_cnt = 0;
+uint32_t can_csum_err_cnt = 0;
+uint32_t can_overflow_cnt = 0;
 
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan1;
@@ -81,7 +84,8 @@ bool stock_aeb_active = false;
 #define MAX_ACC_CONTROL_TIMEOUT 1000
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
-uint8_t tick_count = 0;
+uint8_t status_tick_count = 0;
+uint8_t error_tick_count = 0;
 bool debug_ring_ready = false;
 
 /* USER CODE BEGIN PV */
@@ -123,12 +127,11 @@ void tx_ring_buffer(ring_buffer *q)
   TxHeader.IDE = CAN_ID_STD;
   TxHeader.TransmitGlobalTime = DISABLE;
   TxHeader.ExtId = 0x001;
-  TxHeader.StdId = CAN_FILTER_OUTPUT;
-  TxHeader.DLC = 1;
+  TxHeader.StdId = CAN_FILTER_LOG;
+  TxHeader.DLC = 0;
   uint8_t Data[8];
 
   // log
-  Data[0] = 0x10;
   uint32_t TxMailbox;
 
   ENTER_CRITICAL();
@@ -140,7 +143,7 @@ void tx_ring_buffer(ring_buffer *q)
     q->r_ptr_tx = (q->r_ptr_tx + 1U) % q->tx_fifo_size;
   }
 
-  if (TxHeader.DLC > 1)
+  if (TxHeader.DLC > 0)
   {
     if (HAL_CAN_AddTxMessage(&hcan1, &TxHeader, Data, &TxMailbox) != HAL_OK)
     {
@@ -150,7 +153,6 @@ void tx_ring_buffer(ring_buffer *q)
 
     can_tx_cnt ++;
   }
-
   EXIT_CRITICAL();
 }
 
@@ -400,30 +402,50 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       acc_control_timeout += 20U;
   }
 
-  // 10Hz
-  if (++ tick_count >= 5)
+  // 1Hz
+  if (++ status_tick_count >= 50)
   {
-    tick_count = 0;
+    status_tick_count = 0;
 
+    // status
     CANMessage to_fwd;
     to_fwd.Size = CAN_FILTER_SIZE;
-    to_fwd.Id = CAN_FILTER_OUTPUT;
+    to_fwd.Id = CAN_FILTER_MUX;
     uint16_t uptime = HAL_GetTick() / 1000;
     to_fwd.Data[0] = 0x20;
-    to_fwd.Data[1] = (uptime & 0xFF00) >> 8;
-    to_fwd.Data[2] = (uptime & 0xFF);
-    to_fwd.Data[7] = toyota_checksum(CAN_FILTER_OUTPUT, to_fwd.Data, 8);
+    memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
+    to_fwd.Data[5] = (uptime & 0xFF00) >> 8;
+    to_fwd.Data[6] = (uptime & 0xFF);
+    to_fwd.Data[7] = toyota_checksum(CAN_FILTER_MUX, to_fwd.Data, 8);
     can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
-    ENTER_CRITICAL();
+    // send
     process_can(0);
-    EXIT_CRITICAL();
+  }
 
-    /*
-    puts("tick: ");
-    putui(HAL_GetTick());
-    puts("\n");
-    */
+  // 5Hz
+  if (++ error_tick_count >= 10)
+  {
+    error_tick_count = 0;
+
+    // error status
+    CANMessage to_fwd;
+    to_fwd.Size = CAN_FILTER_SIZE;
+    to_fwd.Id = CAN_FILTER_ERR;
+    #define GET_ERROR(x) (x > 0xFF) ? 0xFF : (x)
+    to_fwd.Data[0] = GET_ERROR(can_rx_errs);
+    to_fwd.Data[1] = GET_ERROR(can_send_errs);
+    to_fwd.Data[2] = GET_ERROR(can_rx_cnt);
+    to_fwd.Data[3] = GET_ERROR(can_tx_cnt);
+    to_fwd.Data[4] = GET_ERROR(can_txd_cnt);
+    to_fwd.Data[5] = GET_ERROR(can_err_cnt);
+    to_fwd.Data[6] = GET_ERROR(can_csum_err_cnt);
+    to_fwd.Data[7] = GET_ERROR(can_overflow_cnt);
+    #undef GET_ERROR
+    can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
+
+    // send
+    process_can(0);
   }
   EXIT_CRITICAL();
 }
@@ -541,11 +563,23 @@ void can_rx(uint8_t can_number)
     // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
     else if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
     {
+      if (toyota_checksum(0x1D3, RxData, 8) != RxData[7])
+      {
+        can_csum_err_cnt ++;
+        return;
+      }
+
       low_speed_lockout = (RxData[1] >> 5) & 0x3;
     }
     // ACC control msg on can 0, EON is sending
     else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
     {
+      if (toyota_checksum(0x343, RxData, 8) != RxData[7])
+      {
+        can_csum_err_cnt ++;
+        return;
+      }
+
       acc_control_timeout = 0;
     }
   }
@@ -554,6 +588,12 @@ void can_rx(uint8_t can_number)
     // AEB BRAKING
     if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
     {
+      if (toyota_checksum(0x344, RxData, 8) != RxData[7])
+      {
+        can_csum_err_cnt ++;
+        return;
+      }
+
       uint16_t stock_aeb = ((RxData[0] << 8U) | RxData[1]) >> 6U;
       stock_aeb_active = (stock_aeb != 0);
     }
@@ -562,6 +602,12 @@ void can_rx(uint8_t can_number)
     {
       if (!stock_aeb_active)
       {
+        if (toyota_checksum(0x343, RxData, 8) != RxData[7])
+        {
+          can_csum_err_cnt ++;
+          return;
+        }
+
         // EON is sending, ignore this msg
         if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
           return;
@@ -577,7 +623,6 @@ void can_rx(uint8_t can_number)
         }
         else
 #endif
-        if (toyota_checksum(0x343, RxData, 8) == RxData[7])
         {
           // use stock msg, but update acc type
           RxData[2] &= 0x3F;
@@ -596,7 +641,7 @@ void can_rx(uint8_t can_number)
   memcpy(to_fwd.Data, RxData, to_fwd.Size);
 
   uint8_t fwd_can = (can_number == 0) ? 1 : 0;
-  can_fwd_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
+  can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
   process_can(fwd_can);
 }
 
@@ -619,6 +664,25 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+  /* c init, which is disabled in startup file */
+  can_rx_errs = 0;
+  can_send_errs = 0;
+  can_rx_cnt = 0;
+  can_tx_cnt = 0;
+  can_txd_cnt = 0;
+  can_err_cnt = 0;
+  can_csum_err_cnt = 0;
+  can_overflow_cnt = 0;
+
+  low_speed_lockout = 3;
+  stock_aeb_active = false;
+
+  acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
+
+  status_tick_count = 0;
+  error_tick_count = 0;
+
+  debug_ring_ready = false;
 
   /* USER CODE END 1 */
 
@@ -686,20 +750,6 @@ int main(void)
     /* Notification Error */
     Error_Handler();
   }
-
-  /* c init, which is disabled in startup file */
-  can_rx_errs = 0;
-  can_send_errs = 0;
-  can_fwd_errs = 0;
-
-  can_rx_cnt = 0;
-  can_tx_cnt = 0;
-  can_txd_cnt = 0;
-  can_err_cnt = 0;
-  can_overflow_cnt = 0;
-
-  low_speed_lockout = 3;
-  stock_aeb_active = false;
 
   clear_ring_buffer(&ring_buffer_debug);
   debug_ring_ready = true;

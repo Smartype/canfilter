@@ -130,8 +130,8 @@ C_INCLUDES =  \
 -IDrivers/STM32F1xx_HAL_Driver/Inc/Legacy \
 -IDrivers/CMSIS/Device/ST/STM32F1xx/Include \
 -IDrivers/CMSIS/Include \
--ICore/Inc/crypto
-
+-ICore/Inc/crypto \
+-I.
 
 # compile gcc flags
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
@@ -187,7 +187,10 @@ $(COMMOBJECTS)
 
 OBJECTS = $(BUILD_DIR)/main.o $(COMMOBJECTS) 
 
-$(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR) 
+$(BUILD_DIR)/gitversion.h:
+	./git-ver.py $(BUILD_DIR)/gitversion.h
+
+$(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR) $(BUILD_DIR)/gitversion.h
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
 
 $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
