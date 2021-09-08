@@ -412,7 +412,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     to_fwd.Size = CAN_FILTER_SIZE;
     to_fwd.Id = CAN_FILTER_MUX;
     uint16_t uptime = HAL_GetTick() / 1000;
-    to_fwd.Data[0] = 0x20;
+    to_fwd.Data[0] = 0x00;
+    // reset, ready, listening, sleep pending, sleep active, error
+    HAL_CAN_StateTypeDef status = HAL_CAN_GetState(&hcan1);
+    // treat 3 and plus as error
+    to_fwd.Data[0] |= MIN(status, 3) << 2;
+    status = HAL_CAN_GetState(&hcan2);
+    to_fwd.Data[0] |= MIN(status, 3);
     memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
     to_fwd.Data[5] = (uptime & 0xFF00) >> 8;
     to_fwd.Data[6] = (uptime & 0xFF);
@@ -447,6 +453,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     // send
     process_can(0);
   }
+
   EXIT_CRITICAL();
 }
 

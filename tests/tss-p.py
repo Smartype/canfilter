@@ -54,8 +54,8 @@ def main():
     #send_PCM_CRUISE_2_3(p)
     send_PCM_CRUISE_2_1(p)
 
-    #send_ACC_CONTROL_1(p)
-    send_ACC_CONTROL_2(p)
+    send_ACC_CONTROL_1(p)
+    #send_ACC_CONTROL_2(p)
 
     time.sleep(0.5)
 
