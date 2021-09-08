@@ -16,7 +16,7 @@ def main():
     if c:
       for m in c:
         msg_id, x, dat, bus = m
-        if msg_id == 765 and dat[0] == 0x10:
+        if msg_id == 0x2A1 and dat[0] == 0x10:
           sys.stdout.write(dat[1:].decode('ascii'))
 
     time.sleep(0.1)

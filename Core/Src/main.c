@@ -29,8 +29,8 @@
 
 #define ENABLE_ACC_INIT_MAGIC      true
 
-#define CAN_FILTER_INPUT    0x2feU
-#define CAN_FILTER_OUTPUT   0x2fdU
+#define CAN_FILTER_INPUT    0x2A0U
+#define CAN_FILTER_OUTPUT   0x2A1U
 #define CAN_FILTER_SIZE     8
 
 void __initialize_hardware_early(void) {
