@@ -82,7 +82,7 @@ bool stock_aeb_active = false;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
 uint8_t tick_count = 0;
-bool debug_uart_ready = false;
+bool debug_ring_ready = false;
 
 /* USER CODE BEGIN PV */
 // ********************* Critical section helpers *********************
@@ -90,16 +90,16 @@ bool debug_uart_ready = false;
 // debug uart
 #define DEBUG_FIFO_SIZE 0x400U
 
-typedef struct uart_ring {
+typedef struct ring_buffer {
   volatile uint16_t w_ptr_tx;
   volatile uint16_t r_ptr_tx;
   uint8_t *elems_tx;
   uint32_t tx_fifo_size;
-} uart_ring;
+} ring_buffer;
 
 #define UART_BUFFER(x, size_tx) \
   uint8_t elems_tx_##x[size_tx]; \
-  uart_ring uart_ring_##x = {  \
+  ring_buffer ring_buffer_##x = {  \
     .w_ptr_tx = 0, \
     .r_ptr_tx = 0, \
     .elems_tx = ((uint8_t *)&(elems_tx_##x)), \
@@ -111,7 +111,7 @@ typedef struct uart_ring {
 // ******************************** UART buffers ********************************
 UART_BUFFER(debug, DEBUG_FIFO_SIZE)
 
-void uart_tx_ring(uart_ring *q)
+void tx_ring_buffer(ring_buffer *q)
 {
   if (q->w_ptr_tx == q->r_ptr_tx)
   {
@@ -154,16 +154,23 @@ void uart_tx_ring(uart_ring *q)
   EXIT_CRITICAL();
 }
 
-void clear_uart_buff(uart_ring *q) {
+void tx_debug_ring()
+{
+    tx_ring_buffer(&ring_buffer_debug);
+}
+
+void clear_ring_buffer(ring_buffer *q) {
   ENTER_CRITICAL();
   q->w_ptr_tx = 0;
   q->r_ptr_tx = 0;
   EXIT_CRITICAL();
 }
 
-bool putc(uart_ring *q, char elem) {
-  if (!debug_uart_ready)
+bool putc(ring_buffer *q, char elem) {
+  if (!debug_ring_ready)
+  {
     return false;
+  }
 
   bool ret = false;
   uint16_t next_w_ptr;
@@ -176,14 +183,14 @@ bool putc(uart_ring *q, char elem) {
     ret = true;
   }
   EXIT_CRITICAL();
-  //uart_tx_ring(q);
+  //tx_ring_buffer(q);
   return ret;
 }
 
 void putch(const char a) {
   // do not lock the cpu
-  //while (!putc(&uart_ring_debug, a));
-  putc(&uart_ring_debug, a);
+  //while (!putc(&ring_buffer_debug, a));
+  putc(&ring_buffer_debug, a);
 }
 
 void puts(const char *a) {
@@ -231,8 +238,6 @@ void hexdump(const void *a, int l) {
   }
   puts("\n");
 }
-
-
 
 // global CAN stats
 typedef struct {
@@ -428,7 +433,7 @@ void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  uart_tx_ring(&uart_ring_debug);
+  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -437,7 +442,7 @@ void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  uart_tx_ring(&uart_ring_debug);
+  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -446,7 +451,7 @@ void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  uart_tx_ring(&uart_ring_debug);
+  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -454,7 +459,7 @@ void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  uart_tx_ring(&uart_ring_debug);
+  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -462,7 +467,7 @@ void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  uart_tx_ring(&uart_ring_debug);
+  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -470,7 +475,7 @@ void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  uart_tx_ring(&uart_ring_debug);
+  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -696,10 +701,11 @@ int main(void)
   low_speed_lockout = 3;
   stock_aeb_active = false;
 
-  clear_uart_buff(&uart_ring_debug);
-  debug_uart_ready = true;
+  clear_ring_buffer(&ring_buffer_debug);
+  debug_ring_ready = true;
 
   puts("can filter starts!\n");
+  tx_debug_ring();
 
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig2;
@@ -759,7 +765,7 @@ int main(void)
     // feed the dog
     HAL_IWDG_Refresh(&hiwdg);
 
-    uart_tx_ring(&uart_ring_debug);
+    tx_debug_ring();
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
