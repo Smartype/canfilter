@@ -566,6 +566,15 @@ void can_rx(uint8_t can_number)
         {
           NVIC_SystemReset();
         }
+        // mute
+        else if (memcmp(RxData + 4, "\x1e\x0b\xb0\x03", 4) == 0)
+        {
+          disable_interrupts();
+          // reset to recover
+          while (true)
+          {
+          }
+        }
       }
       return;
     }
@@ -637,10 +646,27 @@ void can_rx(uint8_t can_number)
           RxData[2] &= 0x3F;
           RxData[2] |= 0x40;
 
-          // disable lead car to disengage, or disable engagement
-          if ((cruise_active && car_speed < 30) || ((!cruise_active) && car_speed < 35))
+          if (car_speed < 45.0)
           {
-            RxData[2] &= 0xDF;
+            // disable lead car to disengage, or disable engagement
+            if ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0))
+            {
+              // cmd to 0
+              RxData[0] = 0;
+              RxData[1] = 0;
+              // no lead car
+              RxData[2] &= 0xDF;
+              // lead standstill to 0
+              RxData[3] &= 0xDF;
+            }
+            // fake moving lead
+            else
+            {
+              // lead car
+              RxData[2] |= 0x20;
+              // lead standstill to 0
+              RxData[3] &= 0xDF;
+            }
           }
 
           // update checksum
