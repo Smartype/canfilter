@@ -29,6 +29,7 @@
 #include "stm32f1xx_it.c.h"
 #include "build/gitversion.h"
 
+#define ENABLE_ACC_CONTROL         true
 #define ENABLE_ACC_INIT_MAGIC      true
 #define ENABLE_ACC_SPEED_LOCKOUT   true
 
@@ -619,6 +620,7 @@ void can_rx(uint8_t can_number)
       uint16_t stock_aeb = ((RxData[0] << 8U) | RxData[1]) >> 6U;
       stock_aeb_active = (stock_aeb != 0);
     }
+#if ENABLE_ACC_CONTROL
     // ACC CONTROL
     else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
     {
@@ -680,6 +682,7 @@ void can_rx(uint8_t can_number)
         }
       }
     }
+#endif // ENABLE_ACC_CONTROL
     // SPEED
     else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
     {
