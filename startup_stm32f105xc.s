@@ -45,8 +45,7 @@ defined in linker script */
 .word _sbss
 /* end address for the .bss section. defined in linker script */
 .word _ebss
-/* ERIC */
-/*.equ  BootRAM, 0xF1E0F85F*/
+.equ  BootRAM, 0xF1E0F85F
 /**
  * @brief  This is the code that gets called when the processor first
  *          starts execution following a reset event. Only the absolutely
@@ -250,11 +249,8 @@ g_pfnVectors:
   .word 0
   .word 0
   .word 0
-  /* ERIC */
-#if 0
   .word BootRAM     /* @0x1E0. This is for boot in RAM mode for
                          STM32F10x Connectivity line Devices. */
-#endif
 
 /*******************************************************************************
 *

@@ -7,6 +7,7 @@
 #include "main.h"
 #include "config.h"
 #include "critical.h"
+#include "libc.h"
 
 #include "early_init.h"
 
