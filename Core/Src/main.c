@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "critical.h"
+#include "libc.h"
 
 #include "early_init.h"
 
@@ -512,10 +513,12 @@ void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 
 void HAL_CAN_SleepCallback(CAN_HandleTypeDef *hcan)
 {
+  (void)hcan;
 }
 
 void HAL_CAN_WakeUpFromRxMsgCallback(CAN_HandleTypeDef *hcan)
 {
+  (void)hcan;
 }
 
 void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)

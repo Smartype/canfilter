@@ -181,12 +181,15 @@ SECTIONS
   
 
   /* Remove information from the standard libraries */
+  /* ERIC */
+  /*
   /DISCARD/ :
   {
     libc.a ( * )
     libm.a ( * )
     libgcc.a ( * )
   }
+  */
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }

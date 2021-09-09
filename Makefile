@@ -24,7 +24,11 @@ TARGET = CanFilter
 #DEBUG = 1
 DEBUG = 0
 # optimization
+ifeq ($(EON),)
 OPT = -Og
+else
+OPT = -Os
+endif
 
 
 #######################################
@@ -98,7 +102,7 @@ BIN = $(CP) -O binary -S
 # CFLAGS
 #######################################
 # cpu
-CPU = -mcpu=cortex-m3
+CPU = -mcpu=cortex-m3 -mlittle-endian 
 
 # fpu
 # NONE for Cortex-M0/M0+/M3
@@ -134,16 +138,12 @@ C_INCLUDES =  \
 -I.
 
 # compile gcc flags
-ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
-
-#CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -Wextra -mlittle-endian -nostdlib -fno-builtin -std=gnu11
-CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -nostdlib -fno-builtin -std=gnu11
-#-Wextra -mlittle-endian -nostdlib -fno-builtin -std=gnu11
+ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -std=gnu11 -nostdlib -fno-builtin
+CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -Wextra -std=gnu11 -nostdlib -fno-builtin
 
 ifeq ($(DEBUG), 1)
 CFLAGS += -g -gdwarf-2
 endif
-
 
 # Generate dependency information
 CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
@@ -156,11 +156,19 @@ CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 LDSCRIPT = STM32F105RCTx_FLASH.ld
 
 # libraries
+ifeq ($(EON),)
 LIBS = -lc -lm -lnosys 
-LIBDIR = 
-LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections
+endif
 
+LIBDIR = 
+
+ifeq ($(EON),)
+LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections
 BSLDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(BSTARGET).map,--cref -Wl,--gc-sections
+else
+LDFLAGS = $(MCU) -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections  -std=gnu11 -nostdlib -fno-builtin
+BSLDFLAGS = $(MCU) -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(BSTARGET).map,--cref -Wl,--gc-sections  -std=gnu11 -nostdlib -fno-builtin
+endif
 
 # default action: build all
 all: $(BUILD_DIR)/$(BSTARGET).elf $(BUILD_DIR)/$(BSTARGET).hex $(BUILD_DIR)/$(BSTARGET).bin \
@@ -194,7 +202,11 @@ $(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR) $(BUILD_DIR)/gitversion.h
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
 
 $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
+ifeq ($(EON),)
 	$(AS) -c $(CFLAGS) $< -o $@
+else
+	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.s=.lst)) $< -o $@
+endif
 
 $(BUILD_DIR)/$(BSTARGET).elf: $(BSOBJECTS) Makefile
 	$(CC) $(BSOBJECTS) $(BSLDFLAGS) -o $@
