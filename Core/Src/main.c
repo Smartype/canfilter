@@ -79,6 +79,8 @@ IWDG_HandleTypeDef hiwdg;
 
 uint8_t low_speed_lockout = 3;
 bool stock_aeb_active = false;
+uint16_t car_speed = 0;
+float cruise_active = 0.0f;
 
 // max 1000ms
 #define MAX_ACC_CONTROL_TIMEOUT 1000
@@ -623,9 +625,9 @@ void can_rx(uint8_t can_number)
         // initializing, inject fake msg
         if (low_speed_lockout == 3)
         {
-          const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
+          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
           //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x43, 0x00, 0x00, 0x00, 0x00, 0x91 }; // CH-R init1
-          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x63, 0xC0, 0x00, 0x00, 0x00, 0x71 }; // CH-R SmartDSU
+          const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x63, 0xC0, 0x00, 0x00, 0x00, 0x71 }; // CH-R SmartDSU
           memcpy(RxData, acc_control_msg, 8);
         }
         else
@@ -635,10 +637,27 @@ void can_rx(uint8_t can_number)
           RxData[2] &= 0x3F;
           RxData[2] |= 0x40;
 
+          // disable lead car to disengage, or disable engagement
+          if ((cruise_active && car_speed < 30) || ((!cruise_active) && car_speed < 35))
+          {
+            RxData[2] &= 0xDF;
+          }
+
           // update checksum
           RxData[7] = toyota_checksum(0x343, RxData, 8);
         }
       }
+    }
+    // SPEED
+    else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
+    {
+      uint16_t speed = (RxData[5] << 8) | RxData[6];
+      car_speed = (float)speed * 0.01;
+    }
+    // PCM CRUISE
+    else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
+    {
+      cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
     }
   }
 
@@ -683,6 +702,8 @@ int main(void)
 
   low_speed_lockout = 3;
   stock_aeb_active = false;
+  car_speed = 0;
+  cruise_active = false;
 
   acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
 
