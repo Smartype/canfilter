@@ -1,5 +1,6 @@
 // **** libc ****
 
+#ifdef EON
 void delay(uint32_t a) {
   volatile uint32_t i;
   for (i = 0; i < a; i++);
@@ -39,4 +40,7 @@ int memcmp(const void * ptr1, const void * ptr2, unsigned int num) {
   }
   return ret;
 }
+#else
+#include <string.h>
+#endif
 

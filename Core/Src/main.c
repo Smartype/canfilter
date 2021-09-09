@@ -171,7 +171,7 @@ void clear_ring_buffer(ring_buffer *q) {
   EXIT_CRITICAL();
 }
 
-bool putc(ring_buffer *q, char elem) {
+static bool dbg_putc(ring_buffer *q, char elem) {
   if (!debug_ring_ready)
   {
     return false;
@@ -192,16 +192,16 @@ bool putc(ring_buffer *q, char elem) {
   return ret;
 }
 
-void putch(const char a) {
+void dbg_putch(const char a) {
   // do not lock the cpu
-  //while (!putc(&ring_buffer_debug, a));
-  putc(&ring_buffer_debug, a);
+  //while (!dbg_putc(&ring_buffer_debug, a));
+  dbg_putc(&ring_buffer_debug, a);
 }
 
-void puts(const char *a) {
+void dbg_puts(const char *a) {
   for (const char *in = a; *in; in++) {
-    if (*in == '\n') putch('\r');
-    putch(*in);
+    if (*in == '\n') dbg_putch('\r');
+    dbg_putch(*in);
   }
 }
 
@@ -216,32 +216,32 @@ void putui(uint32_t i) {
     idx--;
     i_copy /= 10;
   } while (i_copy != 0U);
-  puts(&str[idx + 1U]);
+  dbg_puts(&str[idx + 1U]);
 }
 
 void puth(unsigned int i) {
   const char c[] = "0123456789abcdef";
   for (int pos = 28; pos != -4; pos -= 4) {
-    putch(c[(i >> (unsigned int)(pos)) & 0xFU]);
+    dbg_putch(c[(i >> (unsigned int)(pos)) & 0xFU]);
   }
 }
 
 void puth2(unsigned int i) {
   const char c[] = "0123456789abcdef";
   for (int pos = 4; pos != -4; pos -= 4) {
-    putch(c[(i >> (unsigned int)(pos)) & 0xFU]);
+    dbg_putch(c[(i >> (unsigned int)(pos)) & 0xFU]);
   }
 }
 
 void hexdump(const void *a, int l) {
   if (a != NULL) {
     for (int i=0; i < l; i++) {
-      if ((i != 0) && ((i & 0xf) == 0)) puts("\n");
+      if ((i != 0) && ((i & 0xf) == 0)) dbg_puts("\n");
       puth2(((const unsigned char*)a)[i]);
-      puts(" ");
+      dbg_puts(" ");
     }
   }
-  puts("\n");
+  dbg_puts("\n");
 }
 
 // global CAN stats
@@ -305,7 +305,7 @@ bool can_push(can_ring *q, CANMessage *elem) {
   if (!ret) {
     can_overflow_cnt++;
     #ifdef DEBUG
-      puts("can_push failed!\n");
+      dbg_puts("can_push failed!\n");
     #endif
   }
   return ret;
@@ -811,7 +811,7 @@ int main(void)
   clear_ring_buffer(&ring_buffer_debug);
   debug_ring_ready = true;
 
-  puts("can filter starts!\n");
+  dbg_puts("can filter starts!\n");
   tx_debug_ring();
 
   /* Configure the CAN Filter */
