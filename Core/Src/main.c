@@ -30,6 +30,7 @@
 #include "build/gitversion.h"
 
 #define ENABLE_ACC_INIT_MAGIC      true
+#define ENABLE_ACC_SPEED_LOCKOUT   true
 
 #define CAN_FILTER_SIZE     8
 #define CAN_FILTER_INPUT    0x2A0U
@@ -61,6 +62,7 @@ void __initialize_hardware_early(void) {
 
 /* USER CODE END PM */
 
+// global CAN stats
 uint32_t can_rx_errs = 0;
 uint32_t can_send_errs = 0;
 
@@ -244,7 +246,6 @@ void hexdump(const void *a, int l) {
   dbg_puts("\n");
 }
 
-// global CAN stats
 typedef struct {
   uint32_t Id;
   uint8_t Size;
@@ -651,6 +652,7 @@ void can_rx(uint8_t can_number)
 
           if (car_speed < 45.0)
           {
+#if ENABLE_ACC_SPEED_LOCKOUT
             // disable lead car to disengage, or disable engagement
             if ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0))
             {
@@ -664,6 +666,7 @@ void can_rx(uint8_t can_number)
             }
             // fake moving lead
             else
+#endif
             {
               // lead car
               RxData[2] |= 0x20;
