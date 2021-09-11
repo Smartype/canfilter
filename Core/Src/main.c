@@ -95,6 +95,17 @@ uint8_t status_tick_count = 0;
 uint8_t error_tick_count = 0;
 bool debug_ring_ready = false;
 
+#define CRASH_STATE_RESET       0
+#define CRASH_STATE_PENDING     1
+#define CRASH_STATE_PASSTHRU    2
+
+#define CRASH_THRS_PASSTHRU     5
+#define CRASH_THRS_BOOTLOADER   10
+
+uint8_t crash_state;
+
+extern uint32_t reserved_sram[4];
+
 /* USER CODE BEGIN PV */
 // ********************* Critical section helpers *********************
 
@@ -118,6 +129,27 @@ typedef struct ring_buffer {
   };
 
 // ***************************** Function prototypes *****************************
+uint8_t update_crashes()
+{
+  // uninitialized, set to 1
+  if ((reserved_sram[1] & 0xFFFFFF00) != 0xDEADBE00)
+  {
+    reserved_sram[1]= 0xDEADBE01;
+  }
+  // initialized, increase by 1
+  else
+  {
+    reserved_sram[1] = 0xDEADBE00 | ((reserved_sram[1] & 0xFF) + 1);
+  }
+
+  return (reserved_sram[1] & 0xFF);
+}
+
+void reset_crashes()
+{
+  reserved_sram[1] = 0xDEADBE00;
+  crash_state = CRASH_STATE_RESET;
+}
 
 // ******************************** UART buffers ********************************
 UART_BUFFER(debug, DEBUG_FIFO_SIZE)
@@ -400,6 +432,12 @@ void process_can(uint8_t can_number)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   ENTER_CRITICAL();
+
+  if (crash_state == CRASH_STATE_PENDING && HAL_GetTick() > 120 * 1000)
+  {
+    reset_crashes();
+  }
+
   (void)htim;
   // Check which version of the timer triggered this callback and toggle LED
   // called at 50Hz/20 millis
@@ -435,29 +473,32 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     process_can(0);
   }
 
-  // 5Hz
-  if (++ error_tick_count >= 10)
+  if (crash_state != CRASH_STATE_PASSTHRU)
   {
-    error_tick_count = 0;
+    // 5Hz
+    if (++ error_tick_count >= 10)
+    {
+      error_tick_count = 0;
 
-    // error status
-    CANMessage to_fwd;
-    to_fwd.Size = CAN_FILTER_SIZE;
-    to_fwd.Id = CAN_FILTER_ERR;
-    #define GET_ERROR(x) (x > 0xFF) ? 0xFF : (x)
-    to_fwd.Data[0] = GET_ERROR(can_rx_errs);
-    to_fwd.Data[1] = GET_ERROR(can_send_errs);
-    to_fwd.Data[2] = GET_ERROR(can_rx_cnt);
-    to_fwd.Data[3] = GET_ERROR(can_tx_cnt);
-    to_fwd.Data[4] = GET_ERROR(can_txd_cnt);
-    to_fwd.Data[5] = GET_ERROR(can_err_cnt);
-    to_fwd.Data[6] = GET_ERROR(can_csum_err_cnt);
-    to_fwd.Data[7] = GET_ERROR(can_overflow_cnt);
-    #undef GET_ERROR
-    can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
+      // error status
+      CANMessage to_fwd;
+      to_fwd.Size = CAN_FILTER_SIZE;
+      to_fwd.Id = CAN_FILTER_ERR;
+      #define GET_ERROR(x) (x > 0xFF) ? 0xFF : (x)
+      to_fwd.Data[0] = GET_ERROR(can_rx_errs);
+      to_fwd.Data[1] = GET_ERROR(can_send_errs);
+      to_fwd.Data[2] = GET_ERROR(can_rx_cnt);
+      to_fwd.Data[3] = GET_ERROR(can_tx_cnt);
+      to_fwd.Data[4] = GET_ERROR(can_txd_cnt);
+      to_fwd.Data[5] = GET_ERROR(can_err_cnt);
+      to_fwd.Data[6] = GET_ERROR(can_csum_err_cnt);
+      to_fwd.Data[7] = GET_ERROR(can_overflow_cnt);
+      #undef GET_ERROR
+      can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
-    // send
-    process_can(0);
+      // send
+      process_can(0);
+    }
   }
 
   EXIT_CRITICAL();
@@ -572,53 +613,50 @@ void can_rx(uint8_t can_number)
         {
           NVIC_SystemReset();
         }
-        // mute
-        else if (memcmp(RxData + 4, "\x1e\x0b\xb0\x03", 4) == 0)
-        {
-          disable_interrupts();
-          // reset to recover
-          while (true)
-          {
-          }
-        }
       }
       return;
     }
-    // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
-    else if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
-    {
-      if (toyota_checksum(0x1D3, RxData, 8) != RxData[7])
-      {
-        can_csum_err_cnt ++;
-        return;
-      }
 
-      low_speed_lockout = (RxData[1] >> 5) & 0x3;
-    }
-    // ACC control msg on can 0, EON is sending
-    else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+    // skip on failsafe
+    if (crash_state != CRASH_STATE_PASSTHRU)
     {
-      if (toyota_checksum(0x343, RxData, 8) != RxData[7])
+      // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
+      if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
       {
-        can_csum_err_cnt ++;
-        return;
-      }
+        if (toyota_checksum(0x1D3, RxData, 8) != RxData[7])
+        {
+          can_csum_err_cnt ++;
+          return;
+        }
 
-      acc_control_timeout = 0;
-    }
-    // SPEED
-    else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
-    {
-      uint16_t speed = (RxData[5] << 8) | RxData[6];
-      car_speed = (float)speed * 0.01;
-    }
-    // PCM CRUISE
-    else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
-    {
-      cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
+        low_speed_lockout = (RxData[1] >> 5) & 0x3;
+      }
+      // ACC control msg on can 0, EON is sending
+      else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+      {
+        if (toyota_checksum(0x343, RxData, 8) != RxData[7])
+        {
+          can_csum_err_cnt ++;
+          return;
+        }
+
+        acc_control_timeout = 0;
+      }
+      // SPEED
+      else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
+      {
+        uint16_t speed = (RxData[5] << 8) | RxData[6];
+        car_speed = (float)speed * 0.01;
+      }
+      // PCM CRUISE
+      else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
+      {
+        cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
+      }
     }
   }
-  else
+  // skip on failsafe
+  else if (crash_state != CRASH_STATE_PASSTHRU)
   // can 1
   {
     // AEB BRAKING
@@ -762,6 +800,24 @@ int main(void)
 
   debug_ring_ready = false;
 
+  uint8_t crashes = update_crashes();
+  // too many crashes, enter bootloader
+  if (crashes >= CRASH_THRS_BOOTLOADER)
+  {
+    reset_crashes();
+    enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
+    NVIC_SystemReset();
+  }
+  // silent
+  else if (crashes >= CRASH_THRS_PASSTHRU)
+  {
+    crash_state = CRASH_STATE_PASSTHRU;
+  }
+  else
+  {
+    crash_state = CRASH_STATE_PENDING;
+  }
+  
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
