@@ -24,11 +24,7 @@ TARGET = CanFilter
 #DEBUG = 1
 DEBUG = 0
 # optimization
-ifeq ($(EON),)
-OPT = -Og
-else
-OPT = -Os
-endif
+OPT = -Ofast
 
 
 #######################################

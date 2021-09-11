@@ -31,7 +31,8 @@
 
 #define ENABLE_ACC_CONTROL         true
 #define ENABLE_ACC_INIT_MAGIC      true
-#define ENABLE_ACC_SPEED_LOCKOUT   true
+#define ENABLE_ACC_SPEED_LOCKOUT   false
+#define ENABLE_LOW_SPEED_LEAD      false
 
 #define CAN_FILTER_SIZE     8
 #define CAN_FILTER_INPUT    0x2A0U
@@ -264,8 +265,8 @@ typedef struct {
   CANMessage elems_##x[size]; \
   can_ring can_##x = { .w_ptr = 0, .r_ptr = 0, .fifo_size = (size), .elems = (CANMessage*)&(elems_##x) };
 
-can_buffer(tx1_q, 0x100)
-can_buffer(tx2_q, 0x100)
+can_buffer(tx1_q, 0x200)
+can_buffer(tx2_q, 0x200)
 
 can_ring *can_queues[] = {&can_tx1_q, &can_tx2_q};
 
@@ -420,7 +421,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     to_fwd.Data[0] = 0x00;
     // reset, ready, listening, sleep pending, sleep active, error
     HAL_CAN_StateTypeDef status = HAL_CAN_GetState(&hcan1);
-    // treat 3 and plus as error
+    // 3 and above treated as error
     to_fwd.Data[0] |= MIN(status, 3) << 2;
     status = HAL_CAN_GetState(&hcan2);
     to_fwd.Data[0] |= MIN(status, 3);
@@ -605,8 +606,20 @@ void can_rx(uint8_t can_number)
 
       acc_control_timeout = 0;
     }
+    // SPEED
+    else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
+    {
+      uint16_t speed = (RxData[5] << 8) | RxData[6];
+      car_speed = (float)speed * 0.01;
+    }
+    // PCM CRUISE
+    else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
+    {
+      cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
+    }
   }
   else
+  // can 1
   {
     // AEB BRAKING
     if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
@@ -640,9 +653,9 @@ void can_rx(uint8_t can_number)
         // initializing, inject fake msg
         if (low_speed_lockout == 3)
         {
-          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
+          const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
           //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x43, 0x00, 0x00, 0x00, 0x00, 0x91 }; // CH-R init1
-          const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x63, 0xC0, 0x00, 0x00, 0x00, 0x71 }; // CH-R SmartDSU
+          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x63, 0xC0, 0x00, 0x00, 0x00, 0x71 }; // CH-R SmartDSU
           memcpy(RxData, acc_control_msg, 8);
         }
         else
@@ -650,13 +663,16 @@ void can_rx(uint8_t can_number)
         {
           // use stock msg, but update acc type
           RxData[2] &= 0x3F;
-          RxData[2] |= 0x40;
+          RxData[2] |= 0x43;
+          // permit breaking
+          RxData[3] |= 0x40;
 
           if (car_speed < 45.0)
           {
 #if ENABLE_ACC_SPEED_LOCKOUT
+            // engage at 35kph, disengage at 30kph
             // disable lead car to disengage, or disable engagement
-            if ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0))
+            if ((cruise_active && car_speed < 26.0) || ((!cruise_active) && car_speed < 31.0))
             {
               // cmd to 0
               RxData[0] = 0;
@@ -669,12 +685,16 @@ void can_rx(uint8_t can_number)
             // fake moving lead
             else
 #endif
+#if ENABLE_LOW_SPEED_LEAD
             {
               // lead car
               RxData[2] |= 0x20;
               // lead standstill to 0
               RxData[3] &= 0xDF;
+              // permit breaking
+              RxData[3] |= 0x40;
             }
+#endif
           }
 
           // update checksum
@@ -683,17 +703,12 @@ void can_rx(uint8_t can_number)
       }
     }
 #endif // ENABLE_ACC_CONTROL
-    // SPEED
-    else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
-    {
-      uint16_t speed = (RxData[5] << 8) | RxData[6];
-      car_speed = (float)speed * 0.01;
-    }
-    // PCM CRUISE
-    else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
-    {
-      cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
-    }
+    // 0x283 PRE_COLLISION, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
+    // 0x33e
+    // 0x365 DSU_CRUISE, LEAD_DISTANCE: RxData[4]
+    // 0x366
+    // 0x411 ACC_HUD, FCW: RxData[0] & 0x10
+    // 0x4ff
   }
 
   CANMessage to_fwd;
