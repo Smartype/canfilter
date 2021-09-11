@@ -129,7 +129,13 @@ typedef struct ring_buffer {
   };
 
 // ***************************** Function prototypes *****************************
-uint8_t update_crashes()
+void reset_crash_state()
+{
+  reserved_sram[1] = 0xDEADBE00;
+  crash_state = CRASH_STATE_RESET;
+}
+
+void update_crash_state()
 {
   // uninitialized, set to 1
   if ((reserved_sram[1] & 0xFFFFFF00) != 0xDEADBE00)
@@ -142,13 +148,23 @@ uint8_t update_crashes()
     reserved_sram[1] = 0xDEADBE00 | ((reserved_sram[1] & 0xFF) + 1);
   }
 
-  return (reserved_sram[1] & 0xFF);
-}
-
-void reset_crashes()
-{
-  reserved_sram[1] = 0xDEADBE00;
-  crash_state = CRASH_STATE_RESET;
+  uint8_t crashes = (reserved_sram[1] & 0xFF);
+  // too many crashes, enter bootloader
+  if (crashes >= CRASH_THRS_BOOTLOADER)
+  {
+    reset_crash_state();
+    enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
+    NVIC_SystemReset();
+  }
+  // silent
+  else if (crashes >= CRASH_THRS_PASSTHRU)
+  {
+    crash_state = CRASH_STATE_PASSTHRU;
+  }
+  else
+  {
+    crash_state = CRASH_STATE_PENDING;
+  }
 }
 
 // ******************************** UART buffers ********************************
@@ -431,14 +447,15 @@ void process_can(uint8_t can_number)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+  (void)htim;
   ENTER_CRITICAL();
 
+  // running for 2 minutes
   if (crash_state == CRASH_STATE_PENDING && HAL_GetTick() > 120 * 1000)
   {
-    reset_crashes();
+    reset_crash_state();
   }
 
-  (void)htim;
   // Check which version of the timer triggered this callback and toggle LED
   // called at 50Hz/20 millis
   if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
@@ -456,13 +473,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     to_fwd.Size = CAN_FILTER_SIZE;
     to_fwd.Id = CAN_FILTER_MUX;
     uint16_t uptime = HAL_GetTick() / 1000;
-    to_fwd.Data[0] = 0x00;
+    to_fwd.Data[0] = crash_state << 6;
     // reset, ready, listening, sleep pending, sleep active, error
     HAL_CAN_StateTypeDef status = HAL_CAN_GetState(&hcan1);
     // 3 and above treated as error
-    to_fwd.Data[0] |= MIN(status, 3) << 2;
+    to_fwd.Data[0] |= status << 3;
     status = HAL_CAN_GetState(&hcan2);
-    to_fwd.Data[0] |= MIN(status, 3);
+    to_fwd.Data[0] |= status;
     memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
     to_fwd.Data[5] = (uptime & 0xFF00) >> 8;
     to_fwd.Data[6] = (uptime & 0xFF);
@@ -800,23 +817,7 @@ int main(void)
 
   debug_ring_ready = false;
 
-  uint8_t crashes = update_crashes();
-  // too many crashes, enter bootloader
-  if (crashes >= CRASH_THRS_BOOTLOADER)
-  {
-    reset_crashes();
-    enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
-    NVIC_SystemReset();
-  }
-  // silent
-  else if (crashes >= CRASH_THRS_PASSTHRU)
-  {
-    crash_state = CRASH_STATE_PASSTHRU;
-  }
-  else
-  {
-    crash_state = CRASH_STATE_PENDING;
-  }
+  update_crash_state(); 
   
   /* USER CODE END 1 */
 
@@ -1181,9 +1182,15 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
+
+  // reset
+  NVIC_SystemReset();
+
+/*
   while (1)
   {
   }
+*/
   /* USER CODE END Error_Handler_Debug */
 }
 
