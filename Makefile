@@ -151,30 +151,18 @@ CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 # link script
 LDSCRIPT = STM32F105RCTx_FLASH.ld
 
-# libraries
-ifeq ($(EON),)
-LIBS = -lc -lm -lnosys 
-else
-LIBS = deps/thumb_v7-m_nofp_libgcc.a
-endif
-
 LIBDIR = 
 
-ifeq ($(EON),)
-LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections
-BSLDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(BSTARGET).map,--cref -Wl,--gc-sections
-else
-LDFLAGS = $(MCU) -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections
-BSLDFLAGS = $(MCU) -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(BSTARGET).map,--cref -Wl,--gc-sections
+LDFLAGS = $(MCU) -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections -nostdlib -fno-builtin
+BSLDFLAGS = $(MCU) -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(BSTARGET).map,--cref -Wl,--gc-sections -nostdlib -fno-builtin
+CFLAGS += -nostdlib -fno-builtin -std=gnu11
+
+ifneq ($(EON),)
+CFLAGS += -DEON=1
 endif
 
-ifeq ($(EON),1)
-LDFLAGS += -nostdlib -fno-builtin
-BSLDFLAGS += -nostdlib -fno-builtin
-CFLAGS += -nostdlib -fno-builtin -DEON=1 -std=gnu11
-endif
-
-
+# for softvfu
+LIBS = deps/thumb_v7-m_nofp_libgcc.a
 
 # default action: build all
 all: $(BUILD_DIR)/$(BSTARGET).elf $(BUILD_DIR)/$(BSTARGET).hex $(BUILD_DIR)/$(BSTARGET).bin \
@@ -208,11 +196,7 @@ $(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR) $(BUILD_DIR)/gitversion.h
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
 
 $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
-ifeq ($(EON),)
 	$(AS) -c $(CFLAGS) $< -o $@
-else
-	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.s=.lst)) $< -o $@
-endif
 
 $(BUILD_DIR)/$(BSTARGET).elf: $(BSOBJECTS) Makefile
 	$(CC) $(BSOBJECTS) $(BSLDFLAGS) -o $@
