@@ -34,6 +34,15 @@
 #define ENABLE_ACC_SPEED_LOCKOUT   false
 #define ENABLE_LOW_SPEED_LEAD      false
 
+// max 1000ms
+#define MAX_ACC_CONTROL_TIMEOUT 1000
+#define CRASH_STATE_RESET       0
+#define CRASH_STATE_PENDING     1
+#define CRASH_STATE_PASSTHRU    2
+
+#define CRASH_THRS_PASSTHRU     10
+#define CRASH_THRS_BOOTLOADER   20
+
 #define CAN_FILTER_SIZE     8
 #define CAN_FILTER_INPUT    0x2A0U
 #define CAN_FILTER_OUTPUT   0x2A1U
@@ -87,20 +96,10 @@ bool stock_aeb_active = false;
 uint16_t car_speed = 0;
 float cruise_active = 0.0f;
 
-// max 1000ms
-#define MAX_ACC_CONTROL_TIMEOUT 1000
-
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
 uint8_t status_tick_count = 0;
 uint8_t error_tick_count = 0;
 bool debug_ring_ready = false;
-
-#define CRASH_STATE_RESET       0
-#define CRASH_STATE_PENDING     1
-#define CRASH_STATE_PASSTHRU    2
-
-#define CRASH_THRS_PASSTHRU     5
-#define CRASH_THRS_BOOTLOADER   10
 
 uint8_t crash_state;
 
@@ -590,25 +589,27 @@ void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
   EXIT_CRITICAL();
 }
 
-void can_rx(uint8_t can_number)
+void can_rx(uint8_t can_number, uint8_t fifo)
 {
   CAN_HandleTypeDef* handle = CANHANDLE_FROM_CAN_NUM(can_number);
   CAN_RxHeaderTypeDef   RxHeader;
   uint8_t               RxData[8];
-  /* Get RX message */
-  if (HAL_CAN_GetRxMessage(handle, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
-  {
-    /* Reception Error */
-    can_rx_errs ++;
-    Error_Handler();
-  }
+  uint8_t fwd_can = (can_number == 0) ? 1 : 0;
 
-  can_rx_cnt ++;
-
-  if (can_number == 0)
+  while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
   {
+    /* Get RX message */
+    if (HAL_CAN_GetRxMessage(handle, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
+    {
+      /* Reception Error */
+      can_rx_errs ++;
+      Error_Handler();
+    }
+  
+    can_rx_cnt ++;
+  
     // internal magic msg
-    if (RxHeader.StdId == CAN_FILTER_INPUT && RxHeader.DLC == CAN_FILTER_SIZE)
+    if (can_number == 0 && RxHeader.StdId == CAN_FILTER_INPUT && RxHeader.DLC == CAN_FILTER_SIZE)
     {
       // magic
       if (memcmp(RxData, "\xce\xfa\xad\xde", 4) == 0)
@@ -636,157 +637,161 @@ void can_rx(uint8_t can_number)
       }
       return;
     }
-
+  
     // skip on failsafe
     if (crash_state != CRASH_STATE_PASSTHRU)
     {
-      // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
-      if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
+      if (can_number == 0)
       {
-        if (toyota_checksum(0x1D3, RxData, 8) != RxData[7])
+        // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
+        if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
         {
-          can_csum_err_cnt ++;
-          return;
-        }
-
-        low_speed_lockout = (RxData[1] >> 5) & 0x3;
-      }
-      // ACC control msg on can 0, EON is sending
-      else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
-      {
-        if (toyota_checksum(0x343, RxData, 8) != RxData[7])
-        {
-          can_csum_err_cnt ++;
-          return;
-        }
-
-        acc_control_timeout = 0;
-      }
-      // SPEED
-      else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
-      {
-        uint16_t speed = (RxData[5] << 8) | RxData[6];
-        car_speed = (float)speed * 0.01;
-      }
-      // PCM CRUISE
-      else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
-      {
-        cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
-      }
-    }
-  }
-  // skip on failsafe
-  else if (crash_state != CRASH_STATE_PASSTHRU)
-  // can 1
-  {
-    // AEB BRAKING
-    if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
-    {
-      if (toyota_checksum(0x344, RxData, 8) != RxData[7])
-      {
-        can_csum_err_cnt ++;
-        return;
-      }
-
-      uint16_t stock_aeb = ((RxData[0] << 8U) | RxData[1]) >> 6U;
-      stock_aeb_active = (stock_aeb != 0);
-    }
-#if ENABLE_ACC_CONTROL
-    // ACC CONTROL
-    else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
-    {
-      if (!stock_aeb_active)
-      {
-        if (toyota_checksum(0x343, RxData, 8) != RxData[7])
-        {
-          can_csum_err_cnt ++;
-          return;
-        }
-
-        // EON is sending, ignore this msg
-        if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
-          return;
-
-#if ENABLE_ACC_INIT_MAGIC
-        // initializing, inject fake msg
-        if (low_speed_lockout == 3)
-        {
-          const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
-          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x43, 0x00, 0x00, 0x00, 0x00, 0x91 }; // CH-R init1
-          //const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x63, 0xC0, 0x00, 0x00, 0x00, 0x71 }; // CH-R SmartDSU
-          memcpy(RxData, acc_control_msg, 8);
-        }
-        else
-#endif
-        {
-          // use stock msg, but update acc type
-          RxData[2] &= 0x3F;
-          RxData[2] |= 0x43;
-          // permit breaking
-          RxData[3] |= 0x40;
-
-          if (car_speed < 45.0)
+          if (toyota_checksum(0x1D3, RxData, 8) != RxData[7])
           {
-#if ENABLE_ACC_SPEED_LOCKOUT
-            // engage at 35kph, disengage at 30kph
-            // disable lead car to disengage, or disable engagement
-            if ((cruise_active && car_speed < 26.0) || ((!cruise_active) && car_speed < 31.0))
+            can_csum_err_cnt ++;
+            return;
+          }
+  
+          low_speed_lockout = (RxData[1] >> 5) & 0x3;
+        }
+        // ACC control msg on can 0, EON is sending
+        else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+        {
+          if (toyota_checksum(0x343, RxData, 8) != RxData[7])
+          {
+            can_csum_err_cnt ++;
+            return;
+          }
+  
+          acc_control_timeout = 0;
+        }
+        // SPEED
+        else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
+        {
+          uint16_t speed = (RxData[5] << 8) | RxData[6];
+          car_speed = (float)speed * 0.01;
+        }
+        // PCM CRUISE
+        else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
+        {
+          cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
+        }
+      }
+      else
+      // can 1
+      {
+        // AEB BRAKING
+        if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
+        {
+          if (toyota_checksum(0x344, RxData, 8) != RxData[7])
+          {
+            can_csum_err_cnt ++;
+            return;
+          }
+  
+          uint16_t stock_aeb = ((RxData[0] << 8U) | RxData[1]) >> 6U;
+          stock_aeb_active = (stock_aeb != 0);
+        }
+#if ENABLE_ACC_CONTROL
+        // ACC CONTROL
+        else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+        {
+          if (!stock_aeb_active)
+          {
+            if (toyota_checksum(0x343, RxData, 8) != RxData[7])
             {
-              // cmd to 0
-              RxData[0] = 0;
-              RxData[1] = 0;
-              // no lead car
-              RxData[2] &= 0xDF;
-              // lead standstill to 0
-              RxData[3] &= 0xDF;
+              can_csum_err_cnt ++;
+              return;
             }
-            // fake moving lead
+  
+            // EON is sending, ignore this msg
+            if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
+              return;
+  
+#if ENABLE_ACC_INIT_MAGIC
+            // initializing, inject fake msg
+            if (low_speed_lockout == 3)
+            {
+              const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
+              memcpy(RxData, acc_control_msg, 8);
+            }
             else
 #endif
-#if ENABLE_LOW_SPEED_LEAD
             {
-              // lead car
-              RxData[2] |= 0x20;
-              // lead standstill to 0
-              RxData[3] &= 0xDF;
+              // use stock msg, but update acc type
+              RxData[2] &= 0x3F;
+              RxData[2] |= 0x43;
               // permit breaking
               RxData[3] |= 0x40;
-            }
+
+              if (car_speed < 45.0)
+              {
+#if ENABLE_ACC_SPEED_LOCKOUT
+                // engage at 35kph, disengage at 30kph
+                // disable lead car to disengage, or disable engagement
+                if ((cruise_active && car_speed < 26.0) || ((!cruise_active) && car_speed < 31.0))
+                {
+                  // cmd to 0
+                  RxData[0] = 0;
+                  RxData[1] = 0;
+                  // no lead car
+                  RxData[2] &= 0xDF;
+                  // lead standstill to 0
+                  RxData[3] &= 0xDF;
+                }
+                // fake moving lead
+                else
 #endif
+#if ENABLE_LOW_SPEED_LEAD
+                {
+                  // lead car
+                  RxData[2] |= 0x20;
+                  // lead standstill to 0
+                  RxData[3] &= 0xDF;
+                  // permit breaking
+                  RxData[3] |= 0x40;
+                }
+#endif
+              }
+  
+              // update checksum
+              RxData[7] = toyota_checksum(0x343, RxData, 8);
+            }
           }
-
-          // update checksum
-          RxData[7] = toyota_checksum(0x343, RxData, 8);
         }
-      }
-    }
-#endif // ENABLE_ACC_CONTROL
-    // 0x283 PRE_COLLISION, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
-    // 0x33e
-    // 0x365 DSU_CRUISE, LEAD_DISTANCE: RxData[4]
-    // 0x366
-    // 0x411 ACC_HUD, FCW: RxData[0] & 0x10
-    // 0x4ff
-  }
 
-  CANMessage to_fwd;
-  to_fwd.Size = RxHeader.DLC;
-  to_fwd.Id = RxHeader.StdId;
-  memcpy(to_fwd.Data, RxData, to_fwd.Size);
+#endif  // ENABLE_ACC_CONTROL
 
-  uint8_t fwd_can = (can_number == 0) ? 1 : 0;
-  can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
+        // 0x283 PRE_COLLISION, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
+        // 0x33e
+        // 0x365 DSU_CRUISE, LEAD_DISTANCE: RxData[4]
+        // 0x366
+        // 0x411 ACC_HUD, FCW: RxData[0] & 0x10
+        // 0x4ff
+
+      } // can 1
+
+    } // if (crash_state != CRASH_STATE_PASSTHRU)
+  
+    CANMessage to_fwd;
+    to_fwd.Size = RxHeader.DLC;
+    to_fwd.Id = RxHeader.StdId;
+    memcpy(to_fwd.Data, RxData, to_fwd.Size); 
+    can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
+
+  } // while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
+
   process_can(fwd_can);
 }
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 {
-  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle));
+  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle), 0);
 }
 
 void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 {
-  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle));
+  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle), 1);
 }
 
 /* USER CODE END 0 */
