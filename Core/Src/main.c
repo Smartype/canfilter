@@ -31,8 +31,8 @@
 
 #define ENABLE_ACC_CONTROL         true
 #define ENABLE_ACC_INIT_MAGIC      true
-#define ENABLE_ACC_SPEED_LOCKOUT   false
-#define ENABLE_LOW_SPEED_LEAD      false
+#define ENABLE_ACC_SPEED_LOCKOUT   true
+#define ENABLE_LOW_SPEED_LEAD      true
 
 // max 1000ms
 #define MAX_ACC_CONTROL_TIMEOUT 1000
@@ -41,7 +41,6 @@
 #define CRASH_STATE_PASSTHRU    2
 
 #define CRASH_THRS_PASSTHRU     10
-#define CRASH_THRS_BOOTLOADER   20
 
 #define CAN_FILTER_SIZE     8
 #define CAN_FILTER_INPUT    0x2A0U
@@ -136,27 +135,9 @@ void reset_crash_state()
 
 void update_crash_state()
 {
-  // uninitialized, set to 1
-  if ((reserved_sram[1] & 0xFFFFFF00) != 0xDEADBE00)
-  {
-    reserved_sram[1]= 0xDEADBE01;
-  }
-  // initialized, increase by 1
-  else
-  {
-    reserved_sram[1] = 0xDEADBE00 | ((reserved_sram[1] & 0xFF) + 1);
-  }
-
   uint8_t crashes = (reserved_sram[1] & 0xFF);
-  // too many crashes, enter bootloader
-  if (crashes >= CRASH_THRS_BOOTLOADER)
-  {
-    reset_crash_state();
-    enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
-    NVIC_SystemReset();
-  }
   // silent
-  else if (crashes >= CRASH_THRS_PASSTHRU)
+  if (crashes >= CRASH_THRS_PASSTHRU)
   {
     crash_state = CRASH_STATE_PASSTHRU;
   }

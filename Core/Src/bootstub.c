@@ -2,6 +2,7 @@
 
 #define VERS_TAG 0x53524556
 #define MIN_VERSION 2
+#define CRASH_THRS_BOOTLOADER   20
 
 // ********************* Includes *********************
 #include "main.h"
@@ -29,6 +30,7 @@ void fail(void) {
 
 // know where to sig check
 extern void *_app_start[];
+extern uint32_t reserved_sram[4];
 
 void Error_Handler(void)
 {
@@ -134,6 +136,22 @@ fail:
   fail();
   return 0;
 good:
+  // track app crashes
+  if ((reserved_sram[1] & 0xFFFFFF00) != 0xDEADBE00) {
+    // uninitialized, set to 1
+    reserved_sram[1]= 0xDEADBE01;
+  } else {
+    // initialized, increase by 1
+    uint8_t crashes = (reserved_sram[1] & 0xFF) + 1;
+    reserved_sram[1] = 0xDEADBE00 | crashes;
+    // app crashed too many times, do not load
+    if (crashes >= CRASH_THRS_BOOTLOADER) {
+      reserved_sram[1]= 0xDEADBE00;
+      fail();
+      return 0;
+    }
+  }
+
   // jump to flash
   ((void(*)(void)) _app_start[1])();
   return 0;
