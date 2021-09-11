@@ -616,18 +616,21 @@ void can_rx(uint8_t can_number)
         // bootloader
         if (memcmp(RxData + 4, "\x1e\x0b\xb0\x02", 4) == 0)
         {
+          reset_crash_state();
           enter_bootloader_mode = ENTER_BOOTLOADER_MAGIC;
           NVIC_SystemReset();
         }
         // softloader
         else if (memcmp(RxData + 4, "\x1e\x0b\xb0\x0a", 4) == 0)
         {
+          reset_crash_state();
           enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
           NVIC_SystemReset();
         }
         // reset
         else if (memcmp(RxData + 4, "\x1e\x0b\xb0\x01", 4) == 0)
         {
+          reset_crash_state();
           NVIC_SystemReset();
         }
       }
