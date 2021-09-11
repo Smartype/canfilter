@@ -53,8 +53,11 @@
 ENTRY(Reset_Handler)
 
 enter_bootloader_mode = 0x2000FFFC;
+reserved_sram =  0x2000FFF0;
+
+/* reverse 16 bytes*/
 /* Highest address of the user mode stack */
-_estack = 0x2000FFFC;    /* end of RAM */
+_estack = 0x2000FFF0;    /* end of RAM */
 _app_start = 0x08004000; /* Reserve Sector 0(16K) for bootloader */
 
 /* Generate a link error if heap and stack don't fit into RAM */
@@ -181,15 +184,16 @@ SECTIONS
   
 
   /* Remove information from the standard libraries */
-  /* ERIC */
-  /*
   /DISCARD/ :
   {
+    /* ERIC */
+    /*
     libc.a ( * )
     libm.a ( * )
     libgcc.a ( * )
+    */
+    deps/thumb_v7-m_nofp_libgcc.a ( *)
   }
-  */
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }

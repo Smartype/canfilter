@@ -40,3 +40,24 @@ int memcmp(const void * ptr1, const void * ptr2, unsigned int num) {
   return ret;
 }
 
+void _init() {
+}
+
+extern void (*__preinit_array_start []) (void) __attribute__((weak));
+extern void (*__preinit_array_end []) (void) __attribute__((weak));
+extern void (*__init_array_start []) (void) __attribute__((weak));
+extern void (*__init_array_end []) (void) __attribute__((weak));
+
+void __libc_init_array() {
+  size_t count, i;
+
+  count = __preinit_array_end - __preinit_array_start;
+  for (i = 0; i < count; i++)
+    __preinit_array_start[i]();
+
+  _init();
+
+  count = __init_array_end - __init_array_start;
+  for (i = 0; i < count; i++)
+    __init_array_start[i]();
+}
