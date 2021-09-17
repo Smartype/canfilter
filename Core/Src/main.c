@@ -33,9 +33,12 @@
 #define ENABLE_ACC_INIT_MAGIC      true
 #define ENABLE_ACC_SPEED_LOCKOUT   true
 #define ENABLE_LOW_SPEED_LEAD      true
+#define ENABLE_FORCE_PASSTHRU      false
 
 // max 1000ms
 #define MAX_ACC_CONTROL_TIMEOUT 1000
+#define MAX_AEB_CONTROL_TIMEOUT 500
+
 #define CRASH_STATE_RESET       0
 #define CRASH_STATE_PENDING     1
 #define CRASH_STATE_PASSTHRU    2
@@ -96,6 +99,7 @@ uint16_t car_speed = 0;
 float cruise_active = 0.0f;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
+uint32_t aeb_control_timeout = MAX_AEB_CONTROL_TIMEOUT;
 uint8_t status_tick_count = 0;
 uint8_t error_tick_count = 0;
 bool debug_ring_ready = false;
@@ -277,7 +281,7 @@ void hexdump(const void *a, int l) {
 }
 
 typedef struct {
-  uint32_t Id;
+  uint16_t Id;
   uint8_t Size;
   uint8_t Data[8];
 } CANMessage;
@@ -293,8 +297,8 @@ typedef struct {
   CANMessage elems_##x[size]; \
   can_ring can_##x = { .w_ptr = 0, .r_ptr = 0, .fifo_size = (size), .elems = (CANMessage*)&(elems_##x) };
 
-can_buffer(tx1_q, 0x200)
-can_buffer(tx2_q, 0x200)
+can_buffer(tx1_q, 0x100)
+can_buffer(tx2_q, 0x100)
 
 can_ring *can_queues[] = {&can_tx1_q, &can_tx2_q};
 
@@ -384,7 +388,7 @@ static void MX_IWDG_Init(void);
 /* USER CODE END PFP */
 
 // Toyota Checksum algorithm
-uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
+inline uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
   int cksum = 0;
   for(int ii = 0; ii < (len - 1); ii++){
     cksum = (cksum + dat[ii]);
@@ -430,17 +434,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   (void)htim;
   ENTER_CRITICAL();
 
+#if (!ENABLE_FORCE_PASSTHRU)
   // running for 2 minutes
   if (crash_state == CRASH_STATE_PENDING && HAL_GetTick() > 120 * 1000)
   {
     reset_crash_state();
   }
+#endif
 
   // Check which version of the timer triggered this callback and toggle LED
   // called at 50Hz/20 millis
   if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
   {
       acc_control_timeout += 20U;
+  }
+
+  if (aeb_control_timeout < MAX_AEB_CONTROL_TIMEOUT)
+  {
+      aeb_control_timeout += 20U;
   }
 
   // 1Hz
@@ -472,8 +483,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   if (crash_state != CRASH_STATE_PASSTHRU)
   {
-    // 5Hz
-    if (++ error_tick_count >= 10)
+    // 2Hz
+    if (++ error_tick_count >= 25)
     {
       error_tick_count = 0;
 
@@ -506,7 +517,6 @@ void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -515,7 +525,6 @@ void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -524,7 +533,6 @@ void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan)
   ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -532,7 +540,6 @@ void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -540,7 +547,6 @@ void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -548,7 +554,6 @@ void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 {
   ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  tx_debug_ring();
   EXIT_CRITICAL();
 }
 
@@ -590,7 +595,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
     can_rx_cnt ++;
   
     // internal magic msg
-    if (can_number == 0 && RxHeader.StdId == CAN_FILTER_INPUT && RxHeader.DLC == CAN_FILTER_SIZE)
+    if (RxHeader.StdId == CAN_FILTER_INPUT && RxHeader.DLC == CAN_FILTER_SIZE && can_number == 0)
     {
       // magic
       if (memcmp(RxData, "\xce\xfa\xad\xde", 4) == 0)
@@ -657,6 +662,11 @@ void can_rx(uint8_t can_number, uint8_t fifo)
         {
           cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
         }
+        // AEB BRAKING
+        else if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
+        {
+          aeb_control_timeout = 0;
+        }
       }
       else
       // can 1
@@ -669,9 +679,14 @@ void can_rx(uint8_t can_number, uint8_t fifo)
             can_csum_err_cnt ++;
             return;
           }
-  
-          uint16_t stock_aeb = ((RxData[0] << 8U) | RxData[1]) >> 6U;
-          stock_aeb_active = (stock_aeb != 0);
+
+          uint16_t aeb_cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
+          uint8_t pcs_alm = ((RxData[2] & 0x2) != 0);
+          stock_aeb_active = (aeb_cmd != 0 || pcs_alm != 0);
+
+          // drop stock aeb
+          if (!stock_aeb_active && aeb_control_timeout < MAX_AEB_CONTROL_TIMEOUT)
+            return;
         }
 #if ENABLE_ACC_CONTROL
         // ACC CONTROL
@@ -702,19 +717,24 @@ void can_rx(uint8_t can_number, uint8_t fifo)
               // use stock msg, but update acc type
               RxData[2] &= 0x3F;
               RxData[2] |= 0x43;
+              /*
               // permit breaking
               RxData[3] |= 0x40;
+              */
 
-              if (car_speed < 45.0)
+              if (car_speed < 45.5)
               {
 #if ENABLE_ACC_SPEED_LOCKOUT
                 // engage at 35kph, disengage at 30kph
                 // disable lead car to disengage, or disable engagement
-                if ((cruise_active && car_speed < 26.0) || ((!cruise_active) && car_speed < 31.0))
+                if ((cruise_active && car_speed < 25.5) || ((!cruise_active) && car_speed < 30.5))
                 {
                   // cmd to 0
+                  /*
                   RxData[0] = 0;
                   RxData[1] = 0;
+                  */
+
                   // no lead car
                   RxData[2] &= 0xDF;
                   // lead standstill to 0
@@ -729,8 +749,6 @@ void can_rx(uint8_t can_number, uint8_t fifo)
                   RxData[2] |= 0x20;
                   // lead standstill to 0
                   RxData[3] &= 0xDF;
-                  // permit breaking
-                  RxData[3] |= 0x40;
                 }
 #endif
               }
@@ -800,14 +818,19 @@ int main(void)
   cruise_active = false;
 
   acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
+  aeb_control_timeout = MAX_AEB_CONTROL_TIMEOUT;
 
   status_tick_count = 0;
   error_tick_count = 0;
 
   debug_ring_ready = false;
 
+#if ENABLE_FORCE_PASSTHRU
+  crash_state = CRASH_STATE_PASSTHRU;
+#else
   update_crash_state(); 
-  
+#endif
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
