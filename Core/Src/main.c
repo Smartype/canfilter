@@ -640,28 +640,29 @@ void can_rx(uint8_t can_number, uint8_t fifo)
     {
       if (can_number == 0)
       {
-        // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
-        if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
+        // (OVERWRITE) ACC control msg on can 0, EON is sending
+        if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
-          if (toyota_checksum(0x1D3, RxData, 8) != RxData[7])
-          {
-            can_csum_err_cnt ++;
-            return;
-          }
-  
-          low_speed_lockout = (RxData[1] >> 5) & 0x3;
-        }
-        // ACC control msg on can 0, EON is sending
-        else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
-        {
-          if (toyota_checksum(0x343, RxData, 8) != RxData[7])
-          {
-            can_csum_err_cnt ++;
-            return;
-          }
-  
           acc_control_timeout = 0;
+          return; // no forward
         }
+        // (OVERWRITE) PRE COLLISION 2
+        else if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
+        {
+          pre_collision_2_timeout = 0;
+          return; // no forward
+        }
+        // (OVERWRITE) PRE COLLISION
+        else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
+        {
+          pre_collision_timeout = 0;
+          return; // no forward
+        }
+        // PCM_CRUISE_2: LOW_SPEED_LOCKOUT 3
+        else if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
+        {
+          low_speed_lockout = (RxData[1] >> 5) & 0x3;
+        } 
         // SPEED
         else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
         {
@@ -673,16 +674,6 @@ void can_rx(uint8_t can_number, uint8_t fifo)
         {
           cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
         }
-        // PRE COLLISION 2
-        else if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
-        {
-          pre_collision_2_timeout = 0;
-        }
-        // PRE COLLISION
-        else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
-        {
-          pre_collision_timeout = 0;
-        }
       }
       else
       // can 1
@@ -690,32 +681,22 @@ void can_rx(uint8_t can_number, uint8_t fifo)
         // PRE COLLISION 2
         if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
         {
-          if (toyota_checksum(0x344, RxData, 8) != RxData[7])
-          {
-            can_csum_err_cnt ++;
-            return;
-          }
-
           uint16_t cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
           uint8_t alm = ((RxData[2] & 0x2) != 0);
           stock_aeb_active = (cmd != 0 || alm != 0);
 
+          // overwrite
           if (!stock_aeb_active && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
         // PRE_COLLISION, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
         else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
         {
-          if (toyota_checksum(0x283, RxData, 7) != RxData[6])
-          {
-            can_csum_err_cnt ++;
-            return;
-          }
-
           uint16_t cmd = ((RxData[2] << 8U) | RxData[3]);
           uint8_t alm = ((RxData[5] & 0x2) != 0);
           stock_aeb_active = (cmd != 0 || alm != 0);
 
+          // overwrite
           if (!stock_aeb_active && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
@@ -724,12 +705,6 @@ void can_rx(uint8_t can_number, uint8_t fifo)
         {
           if (!stock_aeb_active)
           {
-            if (toyota_checksum(0x343, RxData, 8) != RxData[7])
-            {
-              can_csum_err_cnt ++;
-              return;
-            }
-  
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
               return;
