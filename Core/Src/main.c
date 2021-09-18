@@ -35,9 +35,8 @@
 #define ENABLE_LOW_SPEED_LEAD      true
 #define ENABLE_FORCE_PASSTHRU      false
 
-// max 1000ms
-#define MAX_ACC_CONTROL_TIMEOUT 1000
-#define MAX_AEB_CONTROL_TIMEOUT 500
+#define MAX_ACC_CONTROL_TIMEOUT 500
+#define MAX_AEB_CONTROL_TIMEOUT 300
 
 #define CRASH_STATE_RESET       0
 #define CRASH_STATE_PENDING     1
@@ -99,7 +98,8 @@ uint16_t car_speed = 0;
 float cruise_active = 0.0f;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
-uint32_t aeb_control_timeout = MAX_AEB_CONTROL_TIMEOUT;
+uint32_t pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
+uint32_t pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
 uint8_t status_tick_count = 0;
 uint8_t error_tick_count = 0;
 bool debug_ring_ready = false;
@@ -449,9 +449,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       acc_control_timeout += 20U;
   }
 
-  if (aeb_control_timeout < MAX_AEB_CONTROL_TIMEOUT)
+  if (pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
   {
-      aeb_control_timeout += 20U;
+      pre_collision_timeout += 20U;
+  }
+
+  if (pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
+  {
+      pre_collision_2_timeout += 20U;
   }
 
   // 1Hz
@@ -662,16 +667,21 @@ void can_rx(uint8_t can_number, uint8_t fifo)
         {
           cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
         }
-        // AEB BRAKING
+        // PRE COLLISION 2
         else if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
         {
-          aeb_control_timeout = 0;
+          pre_collision_2_timeout = 0;
+        }
+        // PRE COLLISION
+        else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
+        {
+          pre_collision_timeout = 0;
         }
       }
       else
       // can 1
       {
-        // AEB BRAKING
+        // PRE COLLISION 2
         if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
         {
           if (toyota_checksum(0x344, RxData, 8) != RxData[7])
@@ -680,12 +690,27 @@ void can_rx(uint8_t can_number, uint8_t fifo)
             return;
           }
 
-          uint16_t aeb_cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
-          uint8_t pcs_alm = ((RxData[2] & 0x2) != 0);
-          stock_aeb_active = (aeb_cmd != 0 || pcs_alm != 0);
+          uint16_t cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
+          uint8_t alm = ((RxData[2] & 0x2) != 0);
+          stock_aeb_active = (cmd != 0 || alm != 0);
 
-          // drop stock aeb
-          if (!stock_aeb_active && aeb_control_timeout < MAX_AEB_CONTROL_TIMEOUT)
+          if (!stock_aeb_active && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
+            return;
+        }
+        // PRE_COLLISION, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
+        else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
+        {
+          if (toyota_checksum(0x283, RxData, 7) != RxData[6])
+          {
+            can_csum_err_cnt ++;
+            return;
+          }
+
+          uint16_t cmd = ((RxData[2] << 8U) | RxData[3]);
+          uint8_t alm = ((RxData[5] & 0x2) != 0);
+          stock_aeb_active = (cmd != 0 || alm != 0);
+
+          if (!stock_aeb_active && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
 #if ENABLE_ACC_CONTROL
@@ -761,7 +786,6 @@ void can_rx(uint8_t can_number, uint8_t fifo)
 
 #endif  // ENABLE_ACC_CONTROL
 
-        // 0x283 PRE_COLLISION, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
         // 0x33e
         // 0x365 DSU_CRUISE, LEAD_DISTANCE: RxData[4]
         // 0x366
@@ -818,7 +842,8 @@ int main(void)
   cruise_active = false;
 
   acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
-  aeb_control_timeout = MAX_AEB_CONTROL_TIMEOUT;
+  pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
+  pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
 
   status_tick_count = 0;
   error_tick_count = 0;
