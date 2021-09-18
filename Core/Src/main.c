@@ -602,9 +602,9 @@ void can_rx(uint8_t can_number, uint8_t fifo)
       can_rx_errs ++;
       Error_Handler();
     }
-  
+
     can_rx_cnt ++;
-  
+
     // internal magic msg
     if (RxHeader.StdId == CAN_FILTER_INPUT && RxHeader.DLC == CAN_FILTER_SIZE && can_number == 0)
     {
@@ -634,7 +634,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
       }
       return;
     }
-  
+ 
     // skip on failsafe
     if (crash_state != CRASH_STATE_PASSTHRU)
     {
@@ -662,7 +662,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
         else if (RxHeader.StdId == 0x1D3 && RxHeader.DLC == 8)
         {
           low_speed_lockout = (RxData[1] >> 5) & 0x3;
-        } 
+        }
         // SPEED
         else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
         {
@@ -708,7 +708,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
               return;
-  
+ 
             // initializing, inject fake msg
             if ((features & F_ACC_INIT_MAGIC) && low_speed_lockout == 3)
             {
@@ -751,7 +751,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
                   RxData[3] &= 0xDF;
                 }
               }
-  
+
               // update checksum
               RxData[7] = toyota_checksum(0x343, RxData, 8);
             }
@@ -767,11 +767,11 @@ void can_rx(uint8_t can_number, uint8_t fifo)
       } // can 1
 
     } // if (crash_state != CRASH_STATE_PASSTHRU)
-  
+
     CANMessage to_fwd;
     to_fwd.Size = RxHeader.DLC;
     to_fwd.Id = RxHeader.StdId;
-    memcpy(to_fwd.Data, RxData, to_fwd.Size); 
+    memcpy(to_fwd.Data, RxData, to_fwd.Size);
     can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
 
   } // while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
@@ -931,7 +931,7 @@ int main(void)
     /* Start Error */
     Error_Handler();
   }
- 
+
   /* Activate CAN RX notification */
   if (HAL_CAN_ActivateNotification(&hcan2, CAN_IT_RX_FIFO0_MSG_PENDING |
               CAN_IT_RX_FIFO1_MSG_PENDING |
