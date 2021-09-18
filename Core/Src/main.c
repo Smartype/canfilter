@@ -29,11 +29,13 @@
 #include "stm32f1xx_it.c.h"
 #include "build/gitversion.h"
 
-#define ENABLE_ACC_CONTROL         true
-#define ENABLE_ACC_INIT_MAGIC      true
-#define ENABLE_ACC_SPEED_LOCKOUT   true
-#define ENABLE_LOW_SPEED_LEAD      true
-#define ENABLE_FORCE_PASSTHRU      false
+#define F_ACC_CONTROL         (1 << 0)
+#define F_ACC_INIT_MAGIC      (1 << 1)
+#define F_ACC_SPEED_LOCKOUT   (1 << 2)
+#define F_LOW_SPEED_LEAD      (1 << 3)
+#define F_FORCE_PASSTHRU      (1 << 4)
+
+uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_LOW_SPEED_LEAD);
 
 #define MAX_ACC_CONTROL_TIMEOUT 500
 #define MAX_AEB_CONTROL_TIMEOUT 300
@@ -434,13 +436,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   (void)htim;
   ENTER_CRITICAL();
 
-#if (!ENABLE_FORCE_PASSTHRU)
-  // running for 2 minutes
-  if (crash_state == CRASH_STATE_PENDING && HAL_GetTick() > 120 * 1000)
+  if (!(features & F_FORCE_PASSTHRU))
   {
-    reset_crash_state();
+    // running for 2 minutes
+    if (crash_state == CRASH_STATE_PENDING && HAL_GetTick() > 120 * 1000)
+    {
+      reset_crash_state();
+    }
   }
-#endif
 
   // Check which version of the timer triggered this callback and toggle LED
   // called at 50Hz/20 millis
@@ -460,30 +463,33 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 
   // 1Hz
-  if (++ status_tick_count >= 50)
+  if (crash_state != CRASH_STATE_PASSTHRU)
   {
-    status_tick_count = 0;
+    if (++ status_tick_count >= 50)
+    {
+      status_tick_count = 0;
 
-    // status
-    CANMessage to_fwd;
-    to_fwd.Size = CAN_FILTER_SIZE;
-    to_fwd.Id = CAN_FILTER_MUX;
-    uint16_t uptime = HAL_GetTick() / 1000;
-    to_fwd.Data[0] = crash_state << 6;
-    // reset, ready, listening, sleep pending, sleep active, error
-    HAL_CAN_StateTypeDef status = HAL_CAN_GetState(&hcan1);
-    // 3 and above treated as error
-    to_fwd.Data[0] |= status << 3;
-    status = HAL_CAN_GetState(&hcan2);
-    to_fwd.Data[0] |= status;
-    memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
-    to_fwd.Data[5] = (uptime & 0xFF00) >> 8;
-    to_fwd.Data[6] = (uptime & 0xFF);
-    to_fwd.Data[7] = toyota_checksum(CAN_FILTER_MUX, to_fwd.Data, 8);
-    can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
+      // status
+      CANMessage to_fwd;
+      to_fwd.Size = CAN_FILTER_SIZE;
+      to_fwd.Id = CAN_FILTER_MUX;
+      uint16_t uptime = HAL_GetTick() / 1000;
+      to_fwd.Data[0] = crash_state << 6;
+      // reset, ready, listening, sleep pending, sleep active, error
+      HAL_CAN_StateTypeDef status = HAL_CAN_GetState(&hcan1);
+      // 3 and above treated as error
+      to_fwd.Data[0] |= status << 3;
+      status = HAL_CAN_GetState(&hcan2);
+      to_fwd.Data[0] |= status;
+      memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
+      to_fwd.Data[5] = (uptime & 0xFF00) >> 8;
+      to_fwd.Data[6] = (uptime & 0xFF);
+      to_fwd.Data[7] = toyota_checksum(CAN_FILTER_MUX, to_fwd.Data, 8);
+      can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
-    // send
-    process_can(0);
+      // send
+      process_can(0);
+    }
   }
 
   if (crash_state != CRASH_STATE_PASSTHRU)
@@ -713,9 +719,8 @@ void can_rx(uint8_t can_number, uint8_t fifo)
           if (!stock_aeb_active && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
-#if ENABLE_ACC_CONTROL
         // ACC CONTROL
-        else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+        else if ((features & F_ACC_CONTROL) && RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
           if (!stock_aeb_active)
           {
@@ -729,15 +734,13 @@ void can_rx(uint8_t can_number, uint8_t fifo)
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
               return;
   
-#if ENABLE_ACC_INIT_MAGIC
             // initializing, inject fake msg
-            if (low_speed_lockout == 3)
+            if ((features & F_ACC_INIT_MAGIC) && low_speed_lockout == 3)
             {
               const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
               memcpy(RxData, acc_control_msg, 8);
             }
             else
-#endif
             {
               // use stock msg, but update acc type
               RxData[2] &= 0x3F;
@@ -749,10 +752,9 @@ void can_rx(uint8_t can_number, uint8_t fifo)
 
               if (car_speed < 45.5)
               {
-#if ENABLE_ACC_SPEED_LOCKOUT
                 // engage at 35kph, disengage at 30kph
                 // disable lead car to disengage, or disable engagement
-                if ((cruise_active && car_speed < 25.5) || ((!cruise_active) && car_speed < 30.5))
+                if ((features & F_ACC_SPEED_LOCKOUT) && ((cruise_active && car_speed < 25.5) || ((!cruise_active) && car_speed < 30.5)))
                 {
                   // cmd to 0
                   /*
@@ -766,16 +768,13 @@ void can_rx(uint8_t can_number, uint8_t fifo)
                   RxData[3] &= 0xDF;
                 }
                 // fake moving lead
-                else
-#endif
-#if ENABLE_LOW_SPEED_LEAD
+                else if (features & F_LOW_SPEED_LEAD)
                 {
                   // lead car
                   RxData[2] |= 0x20;
                   // lead standstill to 0
                   RxData[3] &= 0xDF;
                 }
-#endif
               }
   
               // update checksum
@@ -783,8 +782,6 @@ void can_rx(uint8_t can_number, uint8_t fifo)
             }
           }
         }
-
-#endif  // ENABLE_ACC_CONTROL
 
         // 0x33e
         // 0x365 DSU_CRUISE, LEAD_DISTANCE: RxData[4]
@@ -850,11 +847,16 @@ int main(void)
 
   debug_ring_ready = false;
 
-#if ENABLE_FORCE_PASSTHRU
-  crash_state = CRASH_STATE_PASSTHRU;
-#else
-  update_crash_state(); 
-#endif
+  features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_LOW_SPEED_LEAD);
+
+  if (features & F_FORCE_PASSTHRU)
+  {
+    crash_state = CRASH_STATE_PASSTHRU;
+  }
+  else
+  {
+    update_crash_state();
+  }
 
   /* USER CODE END 1 */
 
