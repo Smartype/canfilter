@@ -34,6 +34,7 @@
 #define F_ACC_SPEED_LOCKOUT   (1 << 2)
 #define F_LOW_SPEED_LEAD      (1 << 3)
 #define F_FORCE_PASSTHRU      (1 << 4)
+#define CONFIG_PAGE_ADDRESS   0x803F800
 
 uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_LOW_SPEED_LEAD);
 
@@ -586,7 +587,56 @@ void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
   EXIT_CRITICAL();
 }
 
-void can_rx(uint8_t can_number, uint8_t fifo)
+void load_features()
+{
+  uint16_t *p = (uint16_t*)(CONFIG_PAGE_ADDRESS + FLASH_PAGE_SIZE - sizeof(uint16_t));
+  // find last init u16
+  while (*p == 0xFFFF && p > (uint16_t*)CONFIG_PAGE_ADDRESS)
+  {
+    p --;
+  }
+
+  if (*p == 0xFFFF)
+  {
+    features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_LOW_SPEED_LEAD);
+  }
+  else
+  {
+    features = *p;
+  }
+}
+
+void save_features()
+{
+  uint16_t *p = (uint16_t*)CONFIG_PAGE_ADDRESS;
+  // find first un-init u16
+  while (*p != 0xFFFF && p < (uint16_t*)(CONFIG_PAGE_ADDRESS + FLASH_PAGE_SIZE))
+  {
+    p ++;
+  }
+
+  HAL_FLASH_Unlock();
+  if (*p != 0xFFFF)
+  {
+    // erase
+    FLASH_EraseInitTypeDef erase;
+    erase.TypeErase = FLASH_TYPEERASE_PAGES;
+    erase.PageAddress = CONFIG_PAGE_ADDRESS;
+    erase.NbPages = 1;
+    uint32_t PageError;
+    if (HAL_FLASHEx_Erase(&erase, &PageError) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    while (FLASH->SR & FLASH_SR_BSY);
+    p = (uint16_t*)CONFIG_PAGE_ADDRESS;
+  }
+
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, (uint32_t)p, features);
+  HAL_FLASH_Lock();
+}
+
+void can_rx(uint8_t can_number, uint32_t fifo)
 {
   CAN_HandleTypeDef* handle = CANHANDLE_FROM_CAN_NUM(can_number);
   CAN_RxHeaderTypeDef   RxHeader;
@@ -596,7 +646,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
   while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
   {
     /* Get RX message */
-    if (HAL_CAN_GetRxMessage(handle, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
+    if (HAL_CAN_GetRxMessage(handle, fifo, &RxHeader, RxData) != HAL_OK)
     {
       /* Reception Error */
       can_rx_errs ++;
@@ -630,6 +680,15 @@ void can_rx(uint8_t can_number, uint8_t fifo)
         {
           reset_crash_state();
           NVIC_SystemReset();
+        }
+        // feature
+        else if (RxData[4] == 0x1F)
+        {
+          features = RxData[6] << 8 | RxData[7];
+          if (RxData[5] & 0x1)
+          {
+            save_features();
+          }
         }
       }
       return;
@@ -678,7 +737,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
       else
       // can 1
       {
-        // PRE COLLISION 2
+        // PRE COLLISION 2, 60Hz
         if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
         {
           uint16_t cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
@@ -689,7 +748,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
           if (!stock_aeb_active && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
-        // PRE_COLLISION, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
+        // PRE_COLLISION, 100Hz, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
         else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
         {
           uint16_t cmd = ((RxData[2] << 8U) | RxData[3]);
@@ -700,7 +759,7 @@ void can_rx(uint8_t can_number, uint8_t fifo)
           if (!stock_aeb_active && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
-        // ACC CONTROL
+        // ACC CONTROL, 100Hz
         else if ((features & F_ACC_CONTROL) && RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
           if (!stock_aeb_active)
@@ -731,8 +790,8 @@ void can_rx(uint8_t can_number, uint8_t fifo)
                 // disable lead car to disengage, or disable engagement
                 if ((features & F_ACC_SPEED_LOCKOUT) && ((cruise_active && car_speed < 25.5) || ((!cruise_active) && car_speed < 30.5)))
                 {
-                  // cmd to 0
                   /*
+                  // cmd to 0
                   RxData[0] = 0;
                   RxData[1] = 0;
                   */
@@ -758,11 +817,11 @@ void can_rx(uint8_t can_number, uint8_t fifo)
           }
         }
 
-        // 0x33e
-        // 0x365 DSU_CRUISE, LEAD_DISTANCE: RxData[4]
-        // 0x366
-        // 0x411 ACC_HUD, FCW: RxData[0] & 0x10
-        // 0x4ff
+        // 0x33e, 15Hz
+        // 0x365 DSU_CRUISE, 15Hz, LEAD_DISTANCE: RxData[4]
+        // 0x366, 15Hz
+        // 0x411 ACC_HUD, 3Hz, FCW: RxData[0] & 0x10
+        // 0x4ff, 3Hz
 
       } // can 1
 
@@ -781,12 +840,12 @@ void can_rx(uint8_t can_number, uint8_t fifo)
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 {
-  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle), 0);
+  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle), CAN_RX_FIFO0);
 }
 
 void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
 {
-  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle), 1);
+  can_rx(CAN_NUM_FROM_CANHANDLE(CanHandle), CAN_RX_FIFO1);
 }
 
 /* USER CODE END 0 */
@@ -822,7 +881,7 @@ int main(void)
 
   debug_ring_ready = false;
 
-  features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_LOW_SPEED_LEAD);
+  load_features();
 
   if (features & F_FORCE_PASSTHRU)
   {
@@ -863,7 +922,7 @@ int main(void)
 
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig1;
-  sFilterConfig1.FilterBank = 14;
+  sFilterConfig1.FilterBank = 0;
   sFilterConfig1.FilterMode = CAN_FILTERMODE_IDMASK;
   sFilterConfig1.FilterScale = CAN_FILTERSCALE_32BIT;
   sFilterConfig1.FilterIdHigh = 0x0000;
@@ -908,14 +967,14 @@ int main(void)
 
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig2;
-  sFilterConfig2.FilterBank = 0;
+  sFilterConfig2.FilterBank = 14;
   sFilterConfig2.FilterMode = CAN_FILTERMODE_IDMASK;
   sFilterConfig2.FilterScale = CAN_FILTERSCALE_32BIT;
   sFilterConfig2.FilterIdHigh = 0x0000;
   sFilterConfig2.FilterIdLow = 0x0000;
   sFilterConfig2.FilterMaskIdHigh = 0x0000;
   sFilterConfig2.FilterMaskIdLow = 0x0000;
-  sFilterConfig2.FilterFIFOAssignment = CAN_RX_FIFO0;
+  sFilterConfig2.FilterFIFOAssignment = CAN_RX_FIFO1;
   sFilterConfig2.FilterActivation = ENABLE;
   sFilterConfig2.SlaveStartFilterBank = 14;
 
@@ -1045,17 +1104,25 @@ static void MX_CAN1_Init(void)
 
   /* USER CODE END CAN1_Init 1 */
   hcan1.Instance = CAN1;
-  hcan1.Init.Prescaler = 4;
   hcan1.Init.Mode = CAN_MODE_NORMAL;
   hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan1.Init.TimeSeg1 = CAN_BS1_15TQ;
-  hcan1.Init.TimeSeg2 = CAN_BS2_2TQ;
-  hcan1.Init.TimeTriggeredMode = DISABLE;
+  hcan1.Init.TimeTriggeredMode = ENABLE;
   hcan1.Init.AutoBusOff = DISABLE;
   hcan1.Init.AutoWakeUp = DISABLE;
   hcan1.Init.AutoRetransmission = DISABLE;
   hcan1.Init.ReceiveFifoLocked = DISABLE;
   hcan1.Init.TransmitFifoPriority = DISABLE;
+
+#if 0
+  hcan1.Init.Prescaler = 4;
+  hcan1.Init.TimeSeg1 = CAN_BS1_15TQ;
+  hcan1.Init.TimeSeg2 = CAN_BS2_2TQ;
+#else
+  hcan1.Init.Prescaler = 9;
+  hcan1.Init.TimeSeg1 = CAN_BS1_6TQ;
+  hcan1.Init.TimeSeg2 = CAN_BS2_1TQ;
+#endif
+
   if (HAL_CAN_Init(&hcan1) != HAL_OK)
   {
     Error_Handler();
@@ -1082,17 +1149,25 @@ static void MX_CAN2_Init(void)
 
   /* USER CODE END CAN2_Init 1 */
   hcan2.Instance = CAN2;
-  hcan2.Init.Prescaler = 4;
   hcan2.Init.Mode = CAN_MODE_NORMAL;
   hcan2.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan2.Init.TimeSeg1 = CAN_BS1_15TQ;
-  hcan2.Init.TimeSeg2 = CAN_BS2_2TQ;
-  hcan2.Init.TimeTriggeredMode = DISABLE;
+  hcan2.Init.TimeTriggeredMode = ENABLE;
   hcan2.Init.AutoBusOff = DISABLE;
   hcan2.Init.AutoWakeUp = DISABLE;
   hcan2.Init.AutoRetransmission = DISABLE;
   hcan2.Init.ReceiveFifoLocked = DISABLE;
   hcan2.Init.TransmitFifoPriority = DISABLE;
+
+#if 0
+  hcan2.Init.Prescaler = 4;
+  hcan2.Init.TimeSeg1 = CAN_BS1_15TQ;
+  hcan2.Init.TimeSeg2 = CAN_BS2_2TQ;
+#else
+  hcan2.Init.Prescaler = 9;
+  hcan2.Init.TimeSeg1 = CAN_BS1_6TQ;
+  hcan2.Init.TimeSeg2 = CAN_BS2_1TQ;
+#endif
+
   if (HAL_CAN_Init(&hcan2) != HAL_OK)
   {
     Error_Handler();
