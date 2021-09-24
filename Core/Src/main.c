@@ -818,10 +818,58 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         }
 
         // 0x33e, 15Hz
+        
         // 0x365 DSU_CRUISE, 15Hz, LEAD_DISTANCE: RxData[4]
+
         // 0x366, 15Hz
+        // BO_ 870 DS11D71: 7 DS1
+        //  SG_ XREQALM : 7|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ XREQABK : 6|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ TGT_DIST : 5|14@0+ (0.01,0) [0|0] "m" Vector__XXX
+        //  SG_ XREQPBA : 23|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ XREQFPB : 22|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ XREQPB : 21|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ XREQEXT : 20|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ XREQPSB : 19|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ TGT_VGAP : 18|11@0+ (0.025,-51.175) [0|0] "m/s" Vector__XXX
+        //  SG_ PCSDISP : 39|4@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ XPCSRDY : 35|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ TGT_NUMB : 34|3@0+ (1,1) [0|0] "" Vector__XXX
+        //  SG_ TGT_POSX : 47|8@0- (0.04,0) [0|0] "m" Vector__XXX
+
+
         // 0x411 ACC_HUD, 3Hz, FCW: RxData[0] & 0x10
-        // 0x4ff, 3Hz
+        // BO_ 1041 DS12F02: 8 DS1
+        //  SG_ PCSINDI : 7|2@0+ (1,0) [0|0] "" FCM
+        //  SG_ PCSWM : 5|2@0+ (1,0) [0|0] "" FCM
+        //  SG_ PCSFCT : 3|1@0+ (1,0) [0|0] "" FCM
+        //  SG_ PCSTUCT : 2|1@0+ (1,0) [0|0] "" FCM
+        //  SG_ DS1LCCK : 1|2@0+ (1,0) [0|0] "" FCM
+        //  SG_ PBTUCT : 14|1@0+ (1,0) [0|0] "" FCM
+        //  SG_ PCSEXIST : 13|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSWDUCT : 11|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSWD : 9|2@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSDW : 39|3@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSDSRF : 36|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSTEMP : 35|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSDUST : 34|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSLCCK : 33|2@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSPEDW : 47|3@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSPVSN : 44|2@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCTEMP2 : 42|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSDUST2 : 41|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSOFFS : 40|1@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ PCSWDS : 55|2@0+ (1,0) [0|0] "" Vector__XXX
+        //  SG_ FRDADJ : 53|3@0+ (1,0) [0|0] "" Vector__XXX
+
+
+        // 0x4ff, 3Hz, 0:4ff 3f00000000000000
+        // BO_ 1279 FRD1N01: 8 FRD
+        //  SG_ FRDNID : 7|8@0+ (1,0) [0|0] "" CGW
+        //  SG_ FRDSNG : 15|1@0+ (1,0) [0|0] "" CGW
+        //  SG_ FRDSPF : 23|16@0+ (1,0) [0|0] "" CGW
+        //  SG_ FRDREV : 39|32@0+ (1,0) [0|0] "" CGW
+
 
       } // can 1
 
@@ -1107,9 +1155,9 @@ static void MX_CAN1_Init(void)
   hcan1.Init.Mode = CAN_MODE_NORMAL;
   hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan1.Init.TimeTriggeredMode = ENABLE;
-  hcan1.Init.AutoBusOff = DISABLE;
+  hcan1.Init.AutoBusOff = ENABLE;
   hcan1.Init.AutoWakeUp = DISABLE;
-  hcan1.Init.AutoRetransmission = DISABLE;
+  hcan1.Init.AutoRetransmission = ENABLE;
   hcan1.Init.ReceiveFifoLocked = DISABLE;
   hcan1.Init.TransmitFifoPriority = DISABLE;
 
@@ -1152,9 +1200,9 @@ static void MX_CAN2_Init(void)
   hcan2.Init.Mode = CAN_MODE_NORMAL;
   hcan2.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan2.Init.TimeTriggeredMode = ENABLE;
-  hcan2.Init.AutoBusOff = DISABLE;
+  hcan2.Init.AutoBusOff = ENABLE;
   hcan2.Init.AutoWakeUp = DISABLE;
-  hcan2.Init.AutoRetransmission = DISABLE;
+  hcan2.Init.AutoRetransmission = ENABLE;
   hcan2.Init.ReceiveFifoLocked = DISABLE;
   hcan2.Init.TransmitFifoPriority = DISABLE;
 
