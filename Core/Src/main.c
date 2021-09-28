@@ -523,22 +523,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       #undef GET_ERROR
       can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
-#if 0
-      // Fake BSM
-      // (0x3F6, Ecu.fwdCamera, (CAR.CAMRY), 0, 60, b'\x80\xda\x00\x00\x00\x00\x00\x00'),
-      to_fwd.Size = 8;
-      to_fwd.Id = 0x3F6;
-      to_fwd.Data[0] = 0x80;
-      to_fwd.Data[1] = 0xda;
-      to_fwd.Data[2] = 0x00;
-      to_fwd.Data[3] = 0x00;
-      to_fwd.Data[4] = 0x00;
-      to_fwd.Data[5] = 0x00;
-      to_fwd.Data[6] = 0x00;
-      to_fwd.Data[7] = 0x00;
-      can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
-#endif
-
       // send
       process_can(0);
     }
