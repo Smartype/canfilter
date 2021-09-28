@@ -447,26 +447,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 
   // Check which version of the timer triggered this callback and toggle LED
-  // called at 50Hz/20 millis
+  // called at 100Hz/20 millis
   if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
   {
-      acc_control_timeout += 20U;
+      acc_control_timeout += 10U;
   }
 
   if (pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
   {
-      pre_collision_timeout += 20U;
+      pre_collision_timeout += 10U;
   }
 
   if (pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
   {
-      pre_collision_2_timeout += 20U;
+      pre_collision_2_timeout += 10U;
   }
 
   // 1Hz
   if (crash_state != CRASH_STATE_PASSTHRU)
   {
-    if (++ status_tick_count >= 50)
+    if (++ status_tick_count >= 100)
     {
       status_tick_count = 0;
 
@@ -496,7 +496,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (crash_state != CRASH_STATE_PASSTHRU)
   {
     // 2Hz
-    if (++ error_tick_count >= 25)
+    if (++ error_tick_count >= 50)
     {
       error_tick_count = 0;
 
@@ -514,6 +514,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       to_fwd.Data[6] = GET_ERROR(can_csum_err_cnt);
       to_fwd.Data[7] = GET_ERROR(can_overflow_cnt);
       #undef GET_ERROR
+      can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
+
+      // Fake BSM
+      // (0x3F6, Ecu.fwdCamera, (CAR.CAMRY), 0, 60, b'\x80\xda\x00\x00\x00\x00\x00\x00'),
+      to_fwd.Size = 8;
+      to_fwd.Id = 0x3F6;
+      to_fwd.Data[0] = 0x80;
+      to_fwd.Data[1] = 0xda;
+      to_fwd.Data[2] = 0x00;
+      to_fwd.Data[3] = 0x00;
+      to_fwd.Data[4] = 0x00;
+      to_fwd.Data[5] = 0x00;
+      to_fwd.Data[6] = 0x00;
+      to_fwd.Data[7] = 0x00;
       can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
       // send
@@ -1274,7 +1288,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 7199;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 199;
+  htim6.Init.Period = 99;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
