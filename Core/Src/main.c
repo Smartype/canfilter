@@ -443,6 +443,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     if (crash_state == CRASH_STATE_PENDING && HAL_GetTick() > 120 * 1000)
     {
       reset_crash_state();
+#ifndef DEBUG
+      if (can_rx_cnt == 0 || can_txd_cnt == 0)
+      {
+          enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
+          NVIC_SystemReset();
+      }
+#endif
     }
   }
 
@@ -979,7 +986,10 @@ int main(void)
   MX_CAN1_Init();
   MX_CAN2_Init();
   MX_TIM6_Init();
+
+#ifndef DEBUG
   MX_IWDG_Init();
+#endif
   /* USER CODE BEGIN 2 */
 
   /* Configure the CAN Filter */
@@ -1082,8 +1092,11 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+
+#ifndef DEBUG
     // feed the dog
     HAL_IWDG_Refresh(&hiwdg);
+#endif
 
     tx_debug_ring();
     /* USER CODE BEGIN 3 */
