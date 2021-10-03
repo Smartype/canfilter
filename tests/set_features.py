@@ -6,6 +6,11 @@ import argparse
 from panda import Panda
 from panda import CanHandle
 
+ACC_CTRL  = 1
+ACC_INIT  = 2
+LOCKSPEED = 4
+FAKELEAD  = 8
+PASSTHRU  = 16
 
 if __name__ == "__main__":
 
@@ -24,15 +29,15 @@ PASSTHRU  = 16''')
   SAVE = bool(int(sys.argv[2]))
 
   f_str = ''
-  if FEATURES & 1:
+  if FEATURES & ACC_CTRL:
     f_str += "acc "
-  if FEATURES & 2:
+  if FEATURES & ACC_INIT:
     f_str += "init "
-  if FEATURES & 4:
+  if FEATURES & LOCKSPEED:
     f_str += "speed "
-  if FEATURES & 8:
+  if FEATURES & FAKELEAD:
     f_str += "lead "
-  if FEATURES & 16:
+  if FEATURES & PASSTHRU:
     f_str += "passthru"
 
   print(f"features: {f_str}, save: {SAVE}")
