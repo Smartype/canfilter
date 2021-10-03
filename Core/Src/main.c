@@ -795,7 +795,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               {
                 // engage at 35kph, disengage at 30kph
                 // disable lead car to disengage, or disable engagement
-                if ((features & F_ACC_SPEED_LOCKOUT) && ((cruise_active && car_speed < 25.5) || ((!cruise_active) && car_speed < 30.5)))
+                if ((features & F_ACC_SPEED_LOCKOUT) && ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0)))
                 {
                   /*
                   // cmd to 0
