@@ -43,6 +43,9 @@ uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_
 // 10 msg
 #define MAX_AEB_CONTROL_TIMEOUT 500
 
+// mute for 5 seconds after any aeb msg
+#define MAX_AEB_TIMEOUT         5000
+
 #define CRASH_STATE_RESET       0
 #define CRASH_STATE_PENDING     1
 #define CRASH_STATE_PASSTHRU    2
@@ -101,7 +104,6 @@ TIM_HandleTypeDef htim6;
 IWDG_HandleTypeDef hiwdg;
 
 uint8_t low_speed_lockout = 3;
-bool stock_aeb_active = false;
 uint16_t car_speed = 0;
 float cruise_active = 0.0f;
 
@@ -113,6 +115,8 @@ uint32_t pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
 uint32_t pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
 uint8_t pre_collision_2_data[8];
 bool pre_collision_2_present = false;
+
+uint32_t aeb_timeout = MAX_AEB_TIMEOUT;
 
 uint8_t status_tick_count = 0;
 uint8_t error_tick_count = 0;
@@ -457,8 +461,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 #ifndef DEBUG
       if (can_rx_cnt == 0 || can_txd_cnt == 0)
       {
-          enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
-          NVIC_SystemReset();
+        enter_bootloader_mode = ENTER_SOFTLOADER_MAGIC;
+        NVIC_SystemReset();
       }
 #endif
     }
@@ -468,17 +472,22 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   // called at 100Hz/20 millis
   if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
   {
-      acc_control_timeout += 10U;
+    acc_control_timeout += 10U;
   }
 
   if (pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
   {
-      pre_collision_timeout += 10U;
+    pre_collision_timeout += 10U;
   }
 
   if (pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
   {
-      pre_collision_2_timeout += 10U;
+    pre_collision_2_timeout += 10U;
+  }
+
+  if (aeb_timeout < MAX_AEB_TIMEOUT)
+  {
+    aeb_timeout += 10U;
   }
 
   // 1Hz
@@ -776,10 +785,13 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         {
           uint16_t cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
           uint8_t alm = ((RxData[2] & 0x2) != 0);
-          stock_aeb_active = (cmd != 0 || alm != 0);
+          if (cmd != 0 || alm != 0)
+          {
+            aeb_timeout = 0;
+          }
 
           // safe to overwrite?
-          if (!stock_aeb_active && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
+          if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
           {
             // miss msg? wait for timeout
             if (!pre_collision_2_present)
@@ -798,16 +810,19 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         {
           uint16_t cmd = ((RxData[2] << 8U) | RxData[3]);
           uint8_t alm = ((RxData[5] & 0x2) != 0);
-          stock_aeb_active = (cmd != 0 || alm != 0);
+          if (cmd != 0 || alm != 0)
+          {
+            aeb_timeout = 0;
+          }
 
           // overwrite
-          if (!stock_aeb_active && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
+          if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
         // ACC CONTROL, 33.33Hz
         else if ((features & F_ACC_CONTROL) && RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
-          if (!stock_aeb_active)
+          if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
@@ -982,7 +997,6 @@ int main(void)
   can_overflow_cnt = 0;
 
   low_speed_lockout = 3;
-  stock_aeb_active = false;
   car_speed = 0;
   cruise_active = false;
 
@@ -991,6 +1005,8 @@ int main(void)
   pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
   pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
   pre_collision_2_present = false;
+
+  aeb_timeout = MAX_AEB_TIMEOUT;
 
   status_tick_count = 0;
   error_tick_count = 0;
