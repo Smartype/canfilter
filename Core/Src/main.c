@@ -50,9 +50,12 @@ uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_
 #define CAN_FILTER_SIZE     8
 #define CAN_FILTER_INPUT    0x2A0U
 #define CAN_FILTER_OUTPUT   0x2A1U
-#define CAN_FILTER_MUX      (CAN_FILTER_OUTPUT + 0)
+#define CAN_FILTER_STAT     (CAN_FILTER_OUTPUT + 0)
 #define CAN_FILTER_ERR      (CAN_FILTER_OUTPUT + 1)
 #define CAN_FILTER_LOG      (CAN_FILTER_OUTPUT + 2)
+
+#define CAN_FILTER_ACC_CONTROL      0x2AF
+#define CAN_FILTER_PRE_COLLISION_2  0x2AE
 
 void __initialize_hardware_early(void) {
   early_initialization();
@@ -101,8 +104,14 @@ uint16_t car_speed = 0;
 float cruise_active = 0.0f;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
+uint8_t acc_control_data[8];
+bool acc_control_present = false;
+
 uint32_t pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
 uint32_t pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
+uint8_t pre_collision_2_data[8];
+bool pre_collision_2_present = false;
+
 uint8_t status_tick_count = 0;
 uint8_t error_tick_count = 0;
 bool debug_ring_ready = false;
@@ -480,7 +489,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       // status
       CANMessage to_fwd;
       to_fwd.Size = CAN_FILTER_SIZE;
-      to_fwd.Id = CAN_FILTER_MUX;
+      to_fwd.Id = CAN_FILTER_STAT;
       uint16_t uptime = HAL_GetTick() / 1000;
       to_fwd.Data[0] = crash_state << 6;
       // reset, ready, listening, sleep pending, sleep active, error
@@ -492,7 +501,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
       to_fwd.Data[5] = (uptime & 0xFF00) >> 8;
       to_fwd.Data[6] = (uptime & 0xFF);
-      to_fwd.Data[7] = toyota_checksum(CAN_FILTER_MUX, to_fwd.Data, 8);
+      to_fwd.Data[7] = toyota_checksum(CAN_FILTER_STAT, to_fwd.Data, 8);
       can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
       // send
@@ -700,16 +709,34 @@ void can_rx(uint8_t can_number, uint32_t fifo)
       }
       return;
     }
- 
+
     // skip on failsafe
     if (crash_state != CRASH_STATE_PASSTHRU)
     {
       if (can_number == 0)
       {
         // (OVERWRITE) ACC control msg on can 0, EON is sending
-        if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+        if (RxHeader.StdId == CAN_FILTER_ACC_CONTROL && RxHeader.DLC == 8)
+        {
+          memcpy(acc_control_data, RxData, 7);
+          acc_control_data[7] = toyota_checksum(0x343, acc_control_data, 8);
+          acc_control_present = true;
+          acc_control_timeout = 0;
+          return; // no forward
+        }
+        // (OVERWRITE) ACC control msg on can 0, EON is sending
+        else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
           acc_control_timeout = 0;
+          return; // no forward
+        }
+        // (OVERWRITE) PRE COLLISION 2
+        else if (RxHeader.StdId == CAN_FILTER_PRE_COLLISION_2 && RxHeader.DLC == 8)
+        {
+          memcpy(pre_collision_2_data, RxData, 7);
+          pre_collision_2_data[7] = toyota_checksum(0x344, pre_collision_2_data, 8);
+          pre_collision_2_present = true;
+          pre_collision_2_timeout = 0;
           return; // no forward
         }
         // (OVERWRITE) PRE COLLISION 2
@@ -744,18 +771,28 @@ void can_rx(uint8_t can_number, uint32_t fifo)
       else
       // can 1
       {
-        // PRE COLLISION 2, 60Hz
+        // PRE COLLISION 2, 20Hz
         if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
         {
           uint16_t cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
           uint8_t alm = ((RxData[2] & 0x2) != 0);
           stock_aeb_active = (cmd != 0 || alm != 0);
 
-          // overwrite
+          // safe to overwrite?
           if (!stock_aeb_active && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
-            return;
+          {
+            // miss msg? wait for timeout
+            if (!pre_collision_2_present)
+            {
+                return; // drop
+            }
+
+            // overwrite
+            memcpy(RxData, pre_collision_2_data, 8);
+            pre_collision_2_present = false;
+          }
         }
-        // PRE_COLLISION, 100Hz, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
+        // PRE_COLLISION, 33.33Hz, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
         else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
         {
           uint16_t cmd = ((RxData[2] << 8U) | RxData[3]);
@@ -766,69 +803,91 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           if (!stock_aeb_active && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
-        // ACC CONTROL, 100Hz
+        // ACC CONTROL, 33.33Hz
         else if ((features & F_ACC_CONTROL) && RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
           if (!stock_aeb_active)
           {
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
-              return;
- 
-            // initializing, inject fake msg
-            if ((features & F_ACC_INIT_MAGIC) && low_speed_lockout == 3)
             {
-              const uint8_t acc_control_msg[] = { 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x8F }; // CH-R init0
-              memcpy(RxData, acc_control_msg, 8);
+              if (!acc_control_present)
+              {
+                return; // drop
+              }
+
+              memcpy(RxData, acc_control_data, 8);
+              acc_control_present = false;
             }
             else
             {
-              // use stock msg, but update acc type
-              RxData[2] &= 0x3F;
-              RxData[2] |= 0x43;
-              /*
-              // permit breaking
-              RxData[3] |= 0x40;
-              */
-
-              if (car_speed < 45.5)
+              // initializing, inject fake msg
+              if ((features & F_ACC_INIT_MAGIC) && low_speed_lockout == 3)
               {
-                // engage at 35kph, disengage at 30kph
-                // disable lead car to disengage, or disable engagement
-                if ((features & F_ACC_SPEED_LOCKOUT) && ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0)))
+                // mimic CH-R behavir
+                uint8_t acc_control[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+                if (HAL_GetTick() < 800)
                 {
-                  /*
-                  // cmd to 0
-                  RxData[0] = 0;
-                  RxData[1] = 0;
-                  */
-
-                  // no lead car
-                  RxData[2] &= 0xDF;
-                  // lead standstill to 0
-                  RxData[3] &= 0xDF;
+                  // acc type: 0, smc: 1
+                  acc_control[2] = 0x01;
                 }
-                // fake moving lead
-                else if (features & F_LOW_SPEED_LEAD)
+                else if (HAL_GetTick() > 1800)
                 {
-                  // lead car
-                  RxData[2] |= 0x20;
-                  // lead standstill to 0
-                  RxData[3] &= 0xDF;
+                  // acc type: 1, smc: 3
+                  acc_control[2] = 0x43;
+                }
+                else
+                {
+                  // acc type: 1, smc: 1
+                  acc_control[2] = 0x41;
+                }
+
+                memcpy(RxData, acc_control, sizeof(acc_control));
+                RxData[7] = toyota_checksum(0x343, RxData, 8);
+              }
+              else
+              {
+                // use stock msg, but update acc type if acc type is 2
+                if ((RxData[2] & 0xC0) == 0x80)
+                {
+                  RxData[2] &= 0x3F;
+                  RxData[2] |= 0x43;
+
+                  if (car_speed < 45.5)
+                  {
+                    // engage at 35kph, disengage at 30kph
+                    // disable lead car to disengage, or disable engagement
+                    if ((features & F_ACC_SPEED_LOCKOUT) &&
+                        ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0)))
+                    {
+                      // no lead car
+                      RxData[2] &= 0xDF;
+                      // lead standstill to 0
+                      RxData[3] &= 0xDF;
+                    }
+                    // fake moving lead
+                    else if (features & F_LOW_SPEED_LEAD)
+                    {
+                      // lead car
+                      RxData[2] |= 0x20;
+                      // lead standstill to 0
+                      RxData[3] &= 0xDF;
+                    }
+                  }
+
+                  // update checksum
+                  RxData[7] = toyota_checksum(0x343, RxData, 8);
                 }
               }
-
-              // update checksum
-              RxData[7] = toyota_checksum(0x343, RxData, 8);
             }
           }
         }
 
-        // 0x33e, 15Hz
-        
-        // 0x365 DSU_CRUISE, 15Hz, LEAD_DISTANCE: RxData[4]
+        // 0x33e, 5Hz, 7fff00c0000000 on CH-R at boot
 
-        // 0x366, 15Hz
+        // 0x365 DSU_CRUISE, 5Hz, LEAD_DISTANCE: RxData[4]
+
+        // 0x366, 5Hz
         // BO_ 870 DS11D71: 7 DS1
         //  SG_ XREQALM : 7|1@0+ (1,0) [0|0] "" Vector__XXX
         //  SG_ XREQABK : 6|1@0+ (1,0) [0|0] "" Vector__XXX
@@ -844,8 +903,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         //  SG_ TGT_NUMB : 34|3@0+ (1,1) [0|0] "" Vector__XXX
         //  SG_ TGT_POSX : 47|8@0- (0.04,0) [0|0] "m" Vector__XXX
 
-
-        // 0x411 ACC_HUD, 3Hz, FCW: RxData[0] & 0x10
+        // 0x411 ACC_HUD, 1Hz, FCW: RxData[0] & 0x10
         // BO_ 1041 DS12F02: 8 DS1
         //  SG_ PCSINDI : 7|2@0+ (1,0) [0|0] "" FCM
         //  SG_ PCSWM : 5|2@0+ (1,0) [0|0] "" FCM
@@ -869,14 +927,13 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         //  SG_ PCSWDS : 55|2@0+ (1,0) [0|0] "" Vector__XXX
         //  SG_ FRDADJ : 53|3@0+ (1,0) [0|0] "" Vector__XXX
 
-
-        // 0x4ff, 3Hz, 0:4ff 3f00000000000000
+        // 0x4ff, 0.77Hz, 0:4ff 3f00000000000000
+        // always 3f00000000000000, even on CH-R
         // BO_ 1279 FRD1N01: 8 FRD
         //  SG_ FRDNID : 7|8@0+ (1,0) [0|0] "" CGW
         //  SG_ FRDSNG : 15|1@0+ (1,0) [0|0] "" CGW
         //  SG_ FRDSPF : 23|16@0+ (1,0) [0|0] "" CGW
         //  SG_ FRDREV : 39|32@0+ (1,0) [0|0] "" CGW
-
 
       } // can 1
 
@@ -928,8 +985,10 @@ int main(void)
   cruise_active = false;
 
   acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
+  acc_control_present = false;
   pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
   pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
+  pre_collision_2_present = false;
 
   status_tick_count = 0;
   error_tick_count = 0;
