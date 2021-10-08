@@ -719,7 +719,6 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         if (RxHeader.StdId == CAN_FILTER_ACC_CONTROL && RxHeader.DLC == 8)
         {
           memcpy(acc_control_data, RxData, 7);
-          acc_control_data[7] = toyota_checksum(0x343, acc_control_data, 8);
           acc_control_present = true;
           acc_control_timeout = 0;
           return; // no forward
@@ -734,7 +733,6 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         else if (RxHeader.StdId == CAN_FILTER_PRE_COLLISION_2 && RxHeader.DLC == 8)
         {
           memcpy(pre_collision_2_data, RxData, 7);
-          pre_collision_2_data[7] = toyota_checksum(0x344, pre_collision_2_data, 8);
           pre_collision_2_present = true;
           pre_collision_2_timeout = 0;
           return; // no forward
@@ -788,7 +786,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             }
 
             // overwrite
-            memcpy(RxData, pre_collision_2_data, 8);
+            memcpy(RxData, pre_collision_2_data, 7);
+            RxData[7] = toyota_checksum(0x344, RxData, 8);
             pre_collision_2_present = false;
           }
         }
@@ -816,7 +815,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                 return; // drop
               }
 
-              memcpy(RxData, acc_control_data, 8);
+              memcpy(RxData, acc_control_data, 7);
+              RxData[7] = toyota_checksum(0x343, RxData, 8);
               acc_control_present = false;
             }
             else
