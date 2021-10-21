@@ -783,9 +783,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // PRE COLLISION 2, 20Hz
         if (RxHeader.StdId == 0x344 && RxHeader.DLC == 8)
         {
-          uint16_t cmd = ((RxData[0] << 8U) | RxData[1]) >> 6U;
-          uint8_t alm = ((RxData[2] & 0x2) != 0);
-          if (cmd != 0 || alm != 0)
+          //0,0x344,0x0000010000000050,8
+          if (RxData[7] != 0x50)
           {
             aeb_timeout = 0;
           }
@@ -808,9 +807,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // PRE_COLLISION, 33.33Hz, PRECOLLISION_ACTIVE: RxData[5] & 0x2, warning on dash
         else if (RxHeader.StdId == 0x283 && RxHeader.DLC == 7)
         {
-          uint16_t cmd = ((RxData[2] << 8U) | RxData[3]);
-          uint8_t alm = ((RxData[5] & 0x2) != 0);
-          if (cmd != 0 || alm != 0)
+          //0,0x283,0x0000000000008c,7
+          if (RxData[6] != 0x8C)
           {
             aeb_timeout = 0;
           }
