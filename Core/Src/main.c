@@ -52,12 +52,13 @@ uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_
 
 #define CRASH_THRS_PASSTHRU     10
 
-#define CAN_FILTER_SIZE     8
-#define CAN_FILTER_INPUT    0x2A0U
-#define CAN_FILTER_OUTPUT   0x2A1U
-#define CAN_FILTER_STAT     (CAN_FILTER_OUTPUT + 0)
-#define CAN_FILTER_ERR      (CAN_FILTER_OUTPUT + 1)
-#define CAN_FILTER_LOG      (CAN_FILTER_OUTPUT + 2)
+#define CAN_FILTER_SIZE             8
+#define CAN_FILTER_INPUT            0x2A0U
+#define CAN_FILTER_OUTPUT           0x2A1U
+#define CAN_FILTER_STAT             (CAN_FILTER_OUTPUT + 0)
+#define CAN_FILTER_ERR              (CAN_FILTER_OUTPUT + 1)
+#define CAN_FILTER_LOG              (CAN_FILTER_OUTPUT + 2)
+#define CAN_FILTER_ACC_CONTROL_COPY (CAN_FILTER_OUTPUT + 3)
 
 #define CAN_FILTER_ACC_CONTROL      0x2AF
 #define CAN_FILTER_PRE_COLLISION_2  0x2AE
@@ -792,7 +793,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           // safe to overwrite?
           if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
           {
-            // TODO: mirror to CAN 0 with different id
+            // drop msg is fixed 0x344,0x0000010000000050,8, do not have to copy to can 0
 
             // miss msg? wait for timeout
             if (!pre_collision_2_present)
@@ -815,18 +816,26 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             aeb_timeout = 0;
           }
 
-          // TODO: mirror to CAN 0 with different id
-
           // overwrite (drop stock, allow EON)
-          if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
+          if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT) {
+            // drop msg is fixed 0x344,0x0000010000000050,8, do not have to copy to can 0
+
             return;
+          }
         }
         // ACC CONTROL, 33.33Hz
         else if ((features & F_ACC_CONTROL) && RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
-            // TODO: mirror to CAN 0 with different id
+            // mirror to CAN 0 with a different id
+            CANMessage to_fwd;
+            to_fwd.Size = 8;
+            to_fwd.Id = CAN_FILTER_ACC_CONTROL_COPY;
+            memcpy(to_fwd.Data, RxData, 7);
+            to_fwd.Data[7] = toyota_checksum(CAN_FILTER_ACC_CONTROL_COPY, to_fwd.Data, 8);
+            can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
+            process_can(fwd_can);
 
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
