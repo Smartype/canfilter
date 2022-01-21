@@ -792,13 +792,15 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           // safe to overwrite?
           if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
           {
+            // TODO: mirror to CAN 0 with different id
+
             // miss msg? wait for timeout
             if (!pre_collision_2_present)
             {
                 return; // drop
             }
 
-            // overwrite
+            // overwrite (with content from EON)
             memcpy(RxData, pre_collision_2_data, 7);
             RxData[7] = toyota_checksum(0x344, RxData, 8);
             pre_collision_2_present = false;
@@ -813,7 +815,9 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             aeb_timeout = 0;
           }
 
-          // overwrite
+          // TODO: mirror to CAN 0 with different id
+
+          // overwrite (drop stock, allow EON)
           if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
             return;
         }
@@ -822,6 +826,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         {
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
+            // TODO: mirror to CAN 0 with different id
+
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
             {
@@ -830,6 +836,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                 return; // drop
               }
 
+              // overwrite (with content from EON)
               memcpy(RxData, acc_control_data, 7);
               RxData[7] = toyota_checksum(0x343, RxData, 8);
               acc_control_present = false;
