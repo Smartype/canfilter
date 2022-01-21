@@ -828,20 +828,21 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         {
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
-            // mirror to CAN 0 with a different id
+            // copy to CAN 0 with a different id
             CANMessage to_fwd;
             to_fwd.Size = 8;
             to_fwd.Id = CAN_FILTER_ACC_CONTROL_COPY;
             memcpy(to_fwd.Data, RxData, 7);
             to_fwd.Data[7] = toyota_checksum(CAN_FILTER_ACC_CONTROL_COPY, to_fwd.Data, 8);
             can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
-            process_can(fwd_can);
 
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
             {
               if (!acc_control_present)
               {
+                // send acc_control_copy before return
+                process_can(fwd_can);
                 return; // drop
               }
 
