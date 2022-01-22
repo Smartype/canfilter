@@ -52,15 +52,18 @@ uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_
 
 #define CRASH_THRS_PASSTHRU     10
 
-#define CAN_FILTER_SIZE             8
-#define CAN_FILTER_INPUT            0x2A0U
-#define CAN_FILTER_OUTPUT           0x2A1U
-#define CAN_FILTER_STATE            (CAN_FILTER_OUTPUT + 0)
-#define CAN_FILTER_ERROR            (CAN_FILTER_OUTPUT + 1)
-#define CAN_FILTER_LOG              (CAN_FILTER_OUTPUT + 2)
-#define CAN_FILTER_ACC_CONTROL_COPY (CAN_FILTER_OUTPUT + 3)
-#define CAN_FILTER_ACC_CONTROL      (CAN_FILTER_OUTPUT + 4)
-#define CAN_FILTER_PRE_COLLISION_2  (CAN_FILTER_OUTPUT + 5)
+#define CAN_FILTER_SIZE         8
+
+// input
+#define CAN_FILTER_INPUT_MAGIC      0x2A0U  // 672
+#define CAN_FILTER_ACC_CONTROL      0x2A1U  // 673
+#define CAN_FILTER_PRE_COLLISION_2  0x2A2U  // 674
+
+// output
+#define CAN_FILTER_STATE            0x2A8   // 680
+#define CAN_FILTER_ERROR            0x2A9   // 681
+#define CAN_FILTER_LOG              0x2AA   // 682
+#define CAN_FILTER_ACC_CONTROL_COPY 0x2AB   // 683
 
 void __initialize_hardware_early(void) {
   early_initialization();
@@ -753,7 +756,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
     can_rx_cnt ++;
 
     // internal magic msg
-    if (RxHeader.StdId == CAN_FILTER_INPUT && RxHeader.DLC == CAN_FILTER_SIZE && can_number == 0)
+    if (RxHeader.StdId == CAN_FILTER_INPUT_MAGIC && RxHeader.DLC == CAN_FILTER_SIZE && can_number == 0)
     {
       // magic
       if (memcmp(RxData, "\xce\xfa\xad\xde", 4) == 0)

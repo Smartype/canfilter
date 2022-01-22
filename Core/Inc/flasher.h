@@ -31,26 +31,18 @@ typedef union _USB_Setup {
 USB_Setup_TypeDef;
 
 bool flash_is_locked(void) {
-  //return true;
-
   return (FLASH->CR & FLASH_CR_LOCK);
 }
 
 void flash_unlock(void) {
-  //return;
-
   HAL_FLASH_Unlock();
 }
 
 void flash_lock(void) {
-  //return;
-
   HAL_FLASH_Lock();
 }
 
 bool flash_erase_size(uint16_t size, bool unlocked) {
-  //return true;
-
   // max 32k
   if (unlocked && size < 32768U) {
     int pages = (size + FLASH_PAGE_SIZE - 1) /FLASH_PAGE_SIZE;
@@ -97,8 +89,6 @@ bool flash_erase_sector(uint8_t sector, bool unlocked) {
 */
 
 void flash_write_word(void *prog_ptr, uint32_t data) {
-  //return;
-
   HAL_FLASH_Program(TYPEPROGRAM_WORD, (uint32_t)prog_ptr, data);
 }
 

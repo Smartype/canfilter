@@ -12,6 +12,6 @@ if __name__ == "__main__":
     if len(p.can_recv()) == 0:
       break
 
-  p.can_send(0x2fe, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x01", 0)
+  p.can_send(0x2A0, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x01", 0)
   print("can reset done")
 
