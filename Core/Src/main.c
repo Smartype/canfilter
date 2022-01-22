@@ -55,13 +55,12 @@ uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_
 #define CAN_FILTER_SIZE             8
 #define CAN_FILTER_INPUT            0x2A0U
 #define CAN_FILTER_OUTPUT           0x2A1U
-#define CAN_FILTER_STAT             (CAN_FILTER_OUTPUT + 0)
-#define CAN_FILTER_ERR              (CAN_FILTER_OUTPUT + 1)
+#define CAN_FILTER_STATE            (CAN_FILTER_OUTPUT + 0)
+#define CAN_FILTER_ERROR            (CAN_FILTER_OUTPUT + 1)
 #define CAN_FILTER_LOG              (CAN_FILTER_OUTPUT + 2)
 #define CAN_FILTER_ACC_CONTROL_COPY (CAN_FILTER_OUTPUT + 3)
-
-#define CAN_FILTER_ACC_CONTROL      0x2AF
-#define CAN_FILTER_PRE_COLLISION_2  0x2AE
+#define CAN_FILTER_ACC_CONTROL      (CAN_FILTER_OUTPUT + 4)
+#define CAN_FILTER_PRE_COLLISION_2  (CAN_FILTER_OUTPUT + 5)
 
 void __initialize_hardware_early(void) {
   early_initialization();
@@ -501,7 +500,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       // status
       CANMessage to_fwd;
       to_fwd.Size = CAN_FILTER_SIZE;
-      to_fwd.Id = CAN_FILTER_STAT;
+      to_fwd.Id = CAN_FILTER_STATE;
 
       /*
       BO_ 673 CAN_FILTER_STATE: 8 XXX
@@ -574,10 +573,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       // error status
       CANMessage to_fwd;
       to_fwd.Size = CAN_FILTER_SIZE;
-      to_fwd.Id = CAN_FILTER_ERR;
+      to_fwd.Id = CAN_FILTER_ERROR;
 
       /*
-      BO_ 674 CAN_FILTER_ERR: 8 XXX
+      BO_ 674 CAN_FILTER_ERROR: 8 XXX
       SG_ RX_ERR : 7|8@0+ (1,0) [0|255] "" XXX
       SG_ SEND_ERR : 15|8@0+ (1,0) [0|255] "" XXX
       SG_ RX_CNT : 23|8@0+ (1,0) [0|255] "" XXX
