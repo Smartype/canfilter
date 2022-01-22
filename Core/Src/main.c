@@ -491,10 +491,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     aeb_timeout += 10U;
   }
 
-  // 1Hz
   if (crash_state != CRASH_STATE_PASSTHRU)
   {
-    if (++ status_tick_count >= 100)
+    // 2Hz
+    if (++ status_tick_count >= 50)
     {
       status_tick_count = 0;
 
@@ -502,29 +502,72 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       CANMessage to_fwd;
       to_fwd.Size = CAN_FILTER_SIZE;
       to_fwd.Id = CAN_FILTER_STAT;
-      uint16_t uptime = HAL_GetTick() / 1000;
+
+      /*
+      BO_ 673 CAN_FILTER_STATE: 8 XXX
+      SG_ CAN1_STATUS : 3|3@1+ (1,0) [0|7] "" XXX
+      SG_ CAN2_STATUS : 0|3@1+ (1,0) [0|7] "" XXX
+      SG_ CRASH_STATE : 7|2@0+ (1,0) [0|3] "" XXX
+      SG_ VERSION_BYTE_2 : 23|8@0+ (1,0) [0|255] "" XXX
+      SG_ VERSION_BYTE_3 : 31|8@0+ (1,0) [0|255] "" XXX
+      SG_ VERSION_BYTE_4 : 39|8@0+ (1,0) [0|255] "" XXX
+      SG_ VERSION_BYTE_1 : 15|8@0+ (1,0) [0|255] "" XXX
+      SG_ UPTIME_SECONDS : 47|16@0+ (1,0) [0|65535] "" XXX
+      SG_ ACC_CONTROL_TIMEOUT : 60|5@0+ (1,0) [0|255] "" XXX
+      SG_ PRE_COLLI_TIMEOUTS : 62|1@0+ (1,0) [0|1] "" XXX
+      SG_ PRE_COLLI_2_TIMEOUTS : 63|1@0+ (1,0) [0|1] "" XXX
+      SG_ AEB_TIMEOUTS : 61|1@0+ (1,0) [0|1] "" XXX
+      */
+
+      // crash state
       to_fwd.Data[0] = crash_state << 6;
+
       // reset, ready, listening, sleep pending, sleep active, error
-      HAL_CAN_StateTypeDef status = HAL_CAN_GetState(&hcan1);
       // 3 and above treated as error
+      HAL_CAN_StateTypeDef status;
+
+      // can1 status
+      status = HAL_CAN_GetState(&hcan1);
       to_fwd.Data[0] |= status << 3;
+
+      // can2 status
       status = HAL_CAN_GetState(&hcan2);
       to_fwd.Data[0] |= status;
+
+      // git version
       memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
+
+      // uptime, 18 hours at most
+      uint16_t uptime = HAL_GetTick() / 1000;
       to_fwd.Data[5] = (uptime & 0xFF00) >> 8;
       to_fwd.Data[6] = (uptime & 0xFF);
-      to_fwd.Data[7] = toyota_checksum(CAN_FILTER_STAT, to_fwd.Data, 8);
+
+      // acc_control_timeout / 10, max 30
+      to_fwd.Data[7] = acc_control_timeout / 10;
+
+      // !(aeb_timeout < MAX_AEB_TIMEOUT)
+      if (!(aeb_timeout < MAX_AEB_TIMEOUT))
+      {
+        to_fwd.Data[7] |= (1 << 5);
+      }
+
+      // !(pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
+      if (!(pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT))
+      {
+        to_fwd.Data[7] |= (1 << 6);
+      }
+
+      // !(pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT)
+      if (!(pre_collision_2_timeout < MAX_AEB_CONTROL_TIMEOUT))
+      {
+        to_fwd.Data[7] |= (1 << 7);
+      }
+
       can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
-
-      // send
-      process_can(0);
     }
-  }
 
-  if (crash_state != CRASH_STATE_PASSTHRU)
-  {
-    // 2Hz
-    if (++ error_tick_count >= 50)
+    // 1Hz
+    if (++ error_tick_count >= 100)
     {
       error_tick_count = 0;
 
@@ -532,6 +575,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       CANMessage to_fwd;
       to_fwd.Size = CAN_FILTER_SIZE;
       to_fwd.Id = CAN_FILTER_ERR;
+
+      /*
+      BO_ 674 CAN_FILTER_ERR: 8 XXX
+      SG_ RX_ERR : 7|8@0+ (1,0) [0|255] "" XXX
+      SG_ SEND_ERR : 15|8@0+ (1,0) [0|255] "" XXX
+      SG_ RX_CNT : 23|8@0+ (1,0) [0|255] "" XXX
+      SG_ TX_CNT : 31|8@0+ (1,0) [0|255] "" XXX
+      SG_ TXD_CNT : 39|8@0+ (1,0) [0|255] "" XXX
+      SG_ CAN_ERR : 47|8@0+ (1,0) [0|255] "" XXX
+      SG_ CSUM_ERR : 55|8@0+ (1,0) [0|255] "" XXX
+      SG_ OVERFLOW : 63|8@0+ (1,0) [0|255] "" XXX
+      */
+
       #define GET_ERROR(x) (x > 0xFF) ? 0xFF : (x)
       to_fwd.Data[0] = GET_ERROR(can_rx_errs);
       to_fwd.Data[1] = GET_ERROR(can_send_errs);
@@ -542,8 +598,22 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       to_fwd.Data[6] = GET_ERROR(can_csum_err_cnt);
       to_fwd.Data[7] = GET_ERROR(can_overflow_cnt);
       #undef GET_ERROR
-      can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
 
+      // clear at every msg
+      can_rx_errs = 0;
+      can_send_errs = 0;
+      can_rx_cnt = 0;
+      can_tx_cnt = 0;
+      can_txd_cnt = 0;
+      can_err_cnt = 0;
+      can_csum_err_cnt = 0;
+      can_overflow_cnt = 0;
+
+      can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
+    }
+
+    if (status_tick_count == 0 || error_tick_count == 0)
+    {
       // send
       process_can(0);
     }
@@ -817,7 +887,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           }
 
           // overwrite (drop stock, allow EON)
-          if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT) {
+          if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
+          {
             // drop msg is fixed 0x344,0x0000010000000050,8, do not have to copy to can 0
 
             return;
