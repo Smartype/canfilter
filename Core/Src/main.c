@@ -505,18 +505,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
       /*
       BO_ 673 CAN_FILTER_STATE: 8 XXX
-      SG_ CAN1_STATUS : 3|3@1+ (1,0) [0|7] "" XXX
       SG_ CAN2_STATUS : 0|3@1+ (1,0) [0|7] "" XXX
+      SG_ CAN1_STATUS : 3|3@1+ (1,0) [0|7] "" XXX
       SG_ CRASH_STATE : 7|2@0+ (1,0) [0|3] "" XXX
+      SG_ VERSION_BYTE_1 : 15|8@0+ (1,0) [0|255] "" XXX
       SG_ VERSION_BYTE_2 : 23|8@0+ (1,0) [0|255] "" XXX
       SG_ VERSION_BYTE_3 : 31|8@0+ (1,0) [0|255] "" XXX
       SG_ VERSION_BYTE_4 : 39|8@0+ (1,0) [0|255] "" XXX
-      SG_ VERSION_BYTE_1 : 15|8@0+ (1,0) [0|255] "" XXX
       SG_ UPTIME_SECONDS : 47|16@0+ (1,0) [0|65535] "" XXX
       SG_ ACC_CONTROL_TIMEOUT : 60|5@0+ (1,0) [0|255] "" XXX
+      SG_ AEB_TIMEOUTS : 61|1@0+ (1,0) [0|1] "" XXX
       SG_ PRE_COLLI_TIMEOUTS : 62|1@0+ (1,0) [0|1] "" XXX
       SG_ PRE_COLLI_2_TIMEOUTS : 63|1@0+ (1,0) [0|1] "" XXX
-      SG_ AEB_TIMEOUTS : 61|1@0+ (1,0) [0|1] "" XXX
       */
 
       // crash state
