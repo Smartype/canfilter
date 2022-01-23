@@ -956,7 +956,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                 if ((RxData[2] & 0xC0) == 0x80)
                 {
                   RxData[2] &= 0x3F;
-                  RxData[2] |= 0x43;
+                  RxData[2] |= 0x41;
 
                   if (car_speed < 45.5)
                   {
