@@ -919,6 +919,25 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                 return; // drop
               }
 
+              // enforce error display on dash
+              // ACC_MALFUNCTION
+              if ((RxData[2] & 0x4) != 0)
+              {
+                  acc_control_data[2] |= 0x4;
+              }
+
+              // RADAR_DIRTY
+              if ((RxData[2] & 0x8) != 0)
+              {
+                  acc_control_data[2] |= 0x8;
+              }
+
+              // ACC_CUT_IN
+              if ((RxData[3] & 0x2) != 0)
+              {
+                  acc_control_data[3] |= 0x2;
+              }
+
               // overwrite (with content from EON)
               memcpy(RxData, acc_control_data, 7);
               RxData[7] = toyota_checksum(0x343, RxData, 8);
