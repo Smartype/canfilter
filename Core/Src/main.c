@@ -111,9 +111,6 @@ uint16_t car_speed = 0;
 float cruise_active = 0.0f;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
-uint8_t acc_control_data[8];
-bool acc_control_present = false;
-
 uint32_t pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
 uint32_t pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
 uint8_t pre_collision_2_data[8];
@@ -323,6 +320,9 @@ can_buffer(tx2_q, 0x100)
 
 can_ring *can_queues[] = {&can_tx1_q, &can_tx2_q};
 
+// cache for about 0.3 second
+can_buffer(acc_control_q, 0xA)
+
 // ********************* interrupt safe queue *********************
 bool can_pop(can_ring *q, CANMessage *elem) {
   bool ret = 0;
@@ -424,6 +424,7 @@ inline uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
 /* USER CODE BEGIN 0 */
 void process_can(uint8_t can_number)
 {
+  //ENTER_CRITICAL();
   CAN_HandleTypeDef *handle = CANHANDLE_FROM_CAN_NUM(can_number);
   while (HAL_CAN_GetTxMailboxesFreeLevel(handle))
   {
@@ -448,6 +449,7 @@ void process_can(uint8_t can_number)
 
     can_tx_cnt ++;
   }
+  //EXIT_CRITICAL();
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -741,6 +743,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
   CAN_HandleTypeDef* handle = CANHANDLE_FROM_CAN_NUM(can_number);
   CAN_RxHeaderTypeDef   RxHeader;
   uint8_t               RxData[8];
+  CANMessage to_fwd;
   uint8_t fwd_can = (can_number == 0) ? 1 : 0;
 
   while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
@@ -802,10 +805,17 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // (OVERWRITE) ACC control msg on can 0, EON is sending
         if (RxHeader.StdId == CAN_FILTER_ACC_CONTROL && RxHeader.DLC == 8)
         {
-          memcpy(acc_control_data, RxData, 7);
-          acc_control_present = true;
+          memcpy(to_fwd.Data, RxData, 8);
+          // evict the oldest if failed to push
+          if (!can_push(&can_acc_control_q, &to_fwd))
+          {
+            CANMessage dummy;
+            can_pop(&can_acc_control_q, &dummy);
+            can_push(&can_acc_control_q, &to_fwd);
+          }
+
           acc_control_timeout = 0;
-          return; // no forward
+          return; // to be translated, no forward
         }
         // (OVERWRITE) ACC control msg on can 0, EON is sending
         else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
@@ -902,7 +912,6 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
             // copy to CAN 0 with a different id
-            CANMessage to_fwd;
             to_fwd.Size = 8;
             to_fwd.Id = CAN_FILTER_ACC_CONTROL_COPY;
             memcpy(to_fwd.Data, RxData, 7);
@@ -912,10 +921,13 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
             {
-              if (!acc_control_present)
+              // load ACC control (overwrite) msg
+              if (!can_pop(&can_acc_control_q, &to_fwd))
               {
                 // send acc_control_copy before return
+                ENTER_CRITICAL();
                 process_can(fwd_can);
+                EXIT_CRITICAL();
                 return; // drop
               }
 
@@ -923,25 +935,24 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               // ACC_MALFUNCTION
               if ((RxData[2] & 0x4) != 0)
               {
-                  acc_control_data[2] |= 0x4;
+                  to_fwd.Data[2] |= 0x4;
               }
 
               // RADAR_DIRTY
               if ((RxData[2] & 0x8) != 0)
               {
-                  acc_control_data[2] |= 0x8;
+                  to_fwd.Data[2] |= 0x8;
               }
 
               // ACC_CUT_IN
               if ((RxData[3] & 0x2) != 0)
               {
-                  acc_control_data[3] |= 0x2;
+                  to_fwd.Data[3] |= 0x2;
               }
 
               // overwrite (with content from EON)
-              memcpy(RxData, acc_control_data, 7);
+              memcpy(RxData, to_fwd.Data, 7);
               RxData[7] = toyota_checksum(0x343, RxData, 8);
-              acc_control_present = false;
             }
             else
             {
@@ -1005,6 +1016,11 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               }
             }
           }
+          // clear acc_control queue while aeb running
+          else
+          {
+            can_clear(&can_acc_control_q);
+          }
         }
 
         // 0x33e, 5Hz, 7fff00c0000000 on CH-R at boot
@@ -1063,7 +1079,6 @@ void can_rx(uint8_t can_number, uint32_t fifo)
 
     } // if (crash_state != CRASH_STATE_PASSTHRU)
 
-    CANMessage to_fwd;
     to_fwd.Size = RxHeader.DLC;
     to_fwd.Id = RxHeader.StdId;
     memcpy(to_fwd.Data, RxData, to_fwd.Size);
@@ -1071,7 +1086,9 @@ void can_rx(uint8_t can_number, uint32_t fifo)
 
   } // while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
 
+  ENTER_CRITICAL();
   process_can(fwd_can);
+  EXIT_CRITICAL();
 }
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
@@ -1108,7 +1125,6 @@ int main(void)
   cruise_active = false;
 
   acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
-  acc_control_present = false;
   pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
   pre_collision_2_timeout = MAX_AEB_CONTROL_TIMEOUT;
   pre_collision_2_present = false;
