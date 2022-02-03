@@ -424,23 +424,25 @@ inline uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
 /* USER CODE BEGIN 0 */
 void process_can(uint8_t can_number)
 {
-  //ENTER_CRITICAL();
+  uint32_t TxMailbox;
+  CANMessage to_send;
+  CAN_TxHeaderTypeDef TxHeader;
+  TxHeader.RTR = CAN_RTR_DATA;
+  TxHeader.IDE = CAN_ID_STD;
+  TxHeader.TransmitGlobalTime = DISABLE;
+  TxHeader.ExtId = 0x001;
+
   CAN_HandleTypeDef *handle = CANHANDLE_FROM_CAN_NUM(can_number);
+
+  ENTER_CRITICAL();
   while (HAL_CAN_GetTxMailboxesFreeLevel(handle))
   {
-    CANMessage to_send;
     if (!can_pop(can_queues[can_number], &to_send))
       break;
 
-    CAN_TxHeaderTypeDef TxHeader;
-    TxHeader.RTR = CAN_RTR_DATA;
-    TxHeader.IDE = CAN_ID_STD;
-    TxHeader.TransmitGlobalTime = DISABLE;
-    TxHeader.ExtId = 0x001;
     TxHeader.StdId = to_send.Id;
     TxHeader.DLC = to_send.Size;
 
-    uint32_t TxMailbox;
     if (HAL_CAN_AddTxMessage(handle, &TxHeader, to_send.Data, &TxMailbox) != HAL_OK)
     {
       /* Transmission request Error */
@@ -449,7 +451,7 @@ void process_can(uint8_t can_number)
 
     can_tx_cnt ++;
   }
-  //EXIT_CRITICAL();
+  EXIT_CRITICAL();
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -628,47 +630,35 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
 {
-  ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan)
 {
-  ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan)
 {
-  ENTER_CRITICAL();
   can_txd_cnt ++;
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  EXIT_CRITICAL();
 }
 
 void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  ENTER_CRITICAL();
   process_can(CAN_NUM_FROM_CANHANDLE(hcan));
-  EXIT_CRITICAL();
 }
 
 void HAL_CAN_SleepCallback(CAN_HandleTypeDef *hcan)
@@ -937,9 +927,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               if (!can_pop(&can_acc_control_q, &to_fwd))
               {
                 // send acc_control_copy before return
-                ENTER_CRITICAL();
                 process_can(fwd_can);
-                EXIT_CRITICAL();
                 return; // drop
               }
 
@@ -1098,9 +1086,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
 
   } // while (true)
 
-  ENTER_CRITICAL();
   process_can(fwd_can);
-  EXIT_CRITICAL();
 }
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
@@ -1287,7 +1273,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
+  while (true)
   {
     /* USER CODE END WHILE */
 
@@ -1297,6 +1283,9 @@ int main(void)
 #endif
 
     tx_debug_ring();
+
+    process_can(0);
+    process_can(1);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -1549,7 +1538,7 @@ void Error_Handler(void)
   NVIC_SystemReset();
 
 /*
-  while (1)
+  while (true)
   {
   }
 */
