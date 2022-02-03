@@ -164,7 +164,7 @@ g_pfnVectors:
   .word ADC1_2_IRQHandler
   .word CAN1_TX_IRQHandler
   .word CAN1_RX0_IRQHandler
-   .word CAN1_RX1_IRQHandler
+  .word CAN1_RX1_IRQHandler
   .word CAN1_SCE_IRQHandler
   .word EXTI9_5_IRQHandler
   .word TIM1_BRK_IRQHandler
