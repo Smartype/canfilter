@@ -1280,14 +1280,17 @@ int main(void)
     /* USER CODE END WHILE */
 
 #ifndef DEBUG
-    // feed the dog
+    // feed the dog, at least every 10 milliseconds
     HAL_IWDG_Refresh(&hiwdg);
 #endif
 
     tx_debug_ring();
 
     process_can(0, false);
+
     process_can(1, false);
+
+    HAL_Delay(5);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -1457,9 +1460,11 @@ static void MX_IWDG_Init(void)
   /* USER CODE BEGIN IWDG_Init 1 */
 
   /* USER CODE END IWDG_Init 1 */
+  // reset every 10 ms 
+  // 72000000/256/2812 = 100 Hz
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
-  hiwdg.Init.Reload = 4095;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
+  hiwdg.Init.Reload = 2812;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
   {
     Error_Handler();
