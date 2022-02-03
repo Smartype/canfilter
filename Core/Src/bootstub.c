@@ -117,7 +117,7 @@ int main(void) {
 
   // compute SHA hash
   uint8_t digest[SHA_DIGEST_SIZE];
-  SHA_hash(&_app_start[1], len-4, digest);
+  SHA_hash(&_app_start[1], len - 4, digest);
 
   // verify version, last bytes in the signed area
   uint32_t vers[2] = {0};
@@ -139,14 +139,14 @@ good:
   // track app crashes
   if ((reserved_sram[1] & 0xFFFFFF00) != 0xDEADBE00) {
     // uninitialized, set to 1
-    reserved_sram[1]= 0xDEADBE01;
+    reserved_sram[1] = 0xDEADBE01;
   } else {
     // initialized, increase by 1
     uint8_t crashes = (reserved_sram[1] & 0xFF) + 1;
     reserved_sram[1] = 0xDEADBE00 | crashes;
     // app crashed too many times, do not load
     if (crashes >= CRASH_THRS_BOOTLOADER) {
-      reserved_sram[1]= 0xDEADBE00;
+      reserved_sram[1] = 0xDEADBE00;
       fail();
       return 0;
     }

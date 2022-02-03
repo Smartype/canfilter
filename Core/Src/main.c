@@ -743,20 +743,32 @@ void can_rx(uint8_t can_number, uint32_t fifo)
   CAN_HandleTypeDef* handle = CANHANDLE_FROM_CAN_NUM(can_number);
   CAN_RxHeaderTypeDef   RxHeader;
   uint8_t               RxData[8];
-  CANMessage to_fwd;
   uint8_t fwd_can = (can_number == 0) ? 1 : 0;
+  CANMessage to_fwd;
+  uint32_t free_level;
 
-  while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
+  while (true)
   {
-    /* Get RX message */
-    if (HAL_CAN_GetRxMessage(handle, fifo, &RxHeader, RxData) != HAL_OK)
+    ENTER_CRITICAL();
+    free_level = HAL_CAN_GetRxFifoFillLevel(handle, fifo);
+    if (free_level > 0)
     {
-      /* Reception Error */
-      can_rx_errs ++;
-      Error_Handler();
-    }
+      /* Get RX message */
+      if (HAL_CAN_GetRxMessage(handle, fifo, &RxHeader, RxData) != HAL_OK)
+      {
+        /* Reception Error */
+        can_rx_errs ++;
+        Error_Handler();
+      }
 
-    can_rx_cnt ++;
+      can_rx_cnt ++;
+    }
+    EXIT_CRITICAL();
+
+    if (free_level <= 0)
+    {
+      return;
+    }
 
     // internal magic msg
     if (RxHeader.StdId == CAN_FILTER_INPUT_MAGIC && RxHeader.DLC == CAN_FILTER_SIZE && can_number == 0)
@@ -1084,7 +1096,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
     memcpy(to_fwd.Data, RxData, to_fwd.Size);
     can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
 
-  } // while (HAL_CAN_GetRxFifoFillLevel(handle, fifo) > 0)
+  } // while (true)
 
   ENTER_CRITICAL();
   process_can(fwd_can);

@@ -199,14 +199,6 @@ int spi_cb_rx(uint8_t *data, int len, uint8_t *data_out) {
 #define CAN_BL_INPUT 0x1
 #define CAN_BL_OUTPUT 0x2
 
-void CAN1_TX_IRQHandler(void) {
-  ENTER_CRITICAL();
-  // clear interrupt
-  CAN1->TSR |= CAN_TSR_RQCP0;
-  can_txd ++;
-  EXIT_CRITICAL();
-}
-
 #define ISOTP_BUF_SIZE 0x110
 
 uint8_t isotp_buf[ISOTP_BUF_SIZE];
@@ -219,7 +211,8 @@ int isotp_buf_out_remain = 0;
 int isotp_buf_out_idx = 0;
 
 void bl_can_send(uint8_t *odat) {
-  // wait for send
+
+  // wait for transmit mailbox0 to be empty
   while (!(CAN1->TSR & CAN_TSR_TME0));
 
   // send continue
@@ -231,13 +224,24 @@ void bl_can_send(uint8_t *odat) {
   can_tx ++;
 }
 
+// tx mailbox empty
+void CAN1_TX_IRQHandler(void) {
+  ENTER_CRITICAL();
+  // Clear the Transmission Complete flag (and TXOK0,ALST0,TERR0 bits)
+  CAN1->TSR = CAN_TSR_RQCP0;
+  can_txd ++;
+  EXIT_CRITICAL();
+}
+
+// rx mailbox message pending
 void CAN1_RX0_IRQHandler(void) {
   ENTER_CRITICAL();
 
+  // fifo0 message pending
   while (CAN1->RF0R & CAN_RF0R_FMP0) {
     can_rx ++;
 
-    if ((CAN1->sFIFOMailBox[0].RIR>>21) == CAN_BL_INPUT) {
+    if ((CAN1->sFIFOMailBox[0].RIR >> 21) == CAN_BL_INPUT) {
       uint8_t dat[8];
       for (int i = 0; i < 8; i++) {
         dat[i] = GET_BYTE(&CAN1->sFIFOMailBox[0], i);
@@ -247,9 +251,6 @@ void CAN1_RX0_IRQHandler(void) {
       if (type == 0x30) {
         // continue
         while (isotp_buf_out_remain > 0) {
-          // wait for send
-          while (!(CAN1->TSR & CAN_TSR_TME0));
-
           odat[0] = 0x20 | isotp_buf_out_idx;
           memcpy(odat+1, isotp_buf_out_ptr, 7);
           isotp_buf_out_remain -= 7;
@@ -310,7 +311,7 @@ void CAN1_RX0_IRQHandler(void) {
       }
     }
 
-    // next
+    // release receive fifo0 to receive next message
     CAN1->RF0R |= CAN_RF0R_RFOM0;
   }
   EXIT_CRITICAL();
@@ -399,9 +400,8 @@ void soft_flasher_start(void) {
   }
 
   /* Activate CAN RX notification */
-  if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING |
-              CAN_IT_TX_MAILBOX_EMPTY |
-              CAN_IT_ERROR) != HAL_OK)
+  if (HAL_CAN_ActivateNotification(&hcan1,
+              CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY | CAN_IT_ERROR) != HAL_OK)
   {
     /* Notification Error */
     Error_Handler();
