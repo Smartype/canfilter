@@ -422,7 +422,7 @@ inline uint8_t toyota_checksum(int addr, uint8_t *dat, int len){
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void process_can(uint8_t can_number)
+void process_can(uint8_t can_number, bool tx_complete)
 {
   uint32_t TxMailbox;
   CANMessage to_send;
@@ -435,6 +435,11 @@ void process_can(uint8_t can_number)
   CAN_HandleTypeDef *handle = CANHANDLE_FROM_CAN_NUM(can_number);
 
   ENTER_CRITICAL();
+  if (tx_complete)
+  {
+    can_txd_cnt ++;
+  }
+
   while (HAL_CAN_GetTxMailboxesFreeLevel(handle))
   {
     if (!can_pop(can_queues[can_number], &to_send))
@@ -621,7 +626,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     if (status_tick_count == 0 || error_tick_count == 0)
     {
       // send
-      process_can(0);
+      process_can(0, false);
     }
   }
 
@@ -630,35 +635,32 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan)
 {
-  can_txd_cnt ++;
-  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan), true);
 }
 
 void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan)
 {
-  can_txd_cnt ++;
-  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan), true);
 }
 
 void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan)
 {
-  can_txd_cnt ++;
-  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan), true);
 }
 
 void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan), false);
 }
 
 void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan), false);
 }
 
 void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan)
 {
-  process_can(CAN_NUM_FROM_CANHANDLE(hcan));
+  process_can(CAN_NUM_FROM_CANHANDLE(hcan), false);
 }
 
 void HAL_CAN_SleepCallback(CAN_HandleTypeDef *hcan)
@@ -927,7 +929,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               if (!can_pop(&can_acc_control_q, &to_fwd))
               {
                 // send acc_control_copy before return
-                process_can(fwd_can);
+                process_can(fwd_can, false);
                 return; // drop
               }
 
@@ -1086,7 +1088,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
 
   } // while (true)
 
-  process_can(fwd_can);
+  process_can(fwd_can, false);
 }
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *CanHandle)
@@ -1284,8 +1286,8 @@ int main(void)
 
     tx_debug_ring();
 
-    process_can(0);
-    process_can(1);
+    process_can(0, false);
+    process_can(1, false);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
