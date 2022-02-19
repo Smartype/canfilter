@@ -987,7 +987,9 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                 // use stock msg, but update acc type if acc type is 2
                 if ((RxData[2] & 0xC0) == 0x80)
                 {
+                  // clear acc_type 0xc0
                   RxData[2] &= 0x3F;
+                  // add acc_type 0x40 and allow_long_press 0x01
                   RxData[2] |= 0x41;
 
                   if (car_speed < 45.5)
@@ -997,18 +999,22 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                     if ((features & F_ACC_SPEED_LOCKOUT) &&
                         ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0)))
                     {
-                      // no lead car
+                      // no lead car, clear mini_car 0x20
                       RxData[2] &= 0xDF;
-                      // lead standstill to 0
+                      // lead standstill to 0, clear lead_standstill 0x20
                       RxData[3] &= 0xDF;
                     }
                     // fake moving lead
                     else if (features & F_LOW_SPEED_LEAD)
                     {
-                      // lead car
-                      RxData[2] |= 0x20;
-                      // lead standstill to 0
-                      RxData[3] &= 0xDF;
+                      // no lead car
+                      if ((RxData[2] & 0x20) == 0)
+                      {
+                        // lead car
+                        RxData[2] |= 0x20;
+                        // lead standstill to 0, clear lead_standstill 0x20
+                        RxData[3] &= 0xDF;
+                      }
                     }
                   }
 
