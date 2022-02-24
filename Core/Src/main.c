@@ -107,7 +107,7 @@ TIM_HandleTypeDef htim6;
 IWDG_HandleTypeDef hiwdg;
 
 uint8_t low_speed_lockout = 3;
-uint16_t car_speed = 0;
+uint16_t vehicle_speed = 0;
 float cruise_active = 0.0f;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
@@ -856,7 +856,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
         {
           uint16_t speed = (RxData[5] << 8) | RxData[6];
-          car_speed = (float)speed * 0.01;
+          vehicle_speed = (float)speed * 0.01;
         }
         // PCM CRUISE
         else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
@@ -991,13 +991,14 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                   RxData[2] &= 0x3F;
                   // add acc_type 0x40 and allow_long_press 0x01
                   RxData[2] |= 0x41;
-
-                  if (car_speed < 45.5)
+                  
+                  // 45 on dash
+                  if (vehicle_speed < 41.5)
                   {
-                    // engage at 35kph, disengage at 30kph
+                    // engage at 30kph, disengage at 25kph
                     // disable lead car to disengage, or disable engagement
                     if ((features & F_ACC_SPEED_LOCKOUT) &&
-                        ((cruise_active && car_speed < 25.0) || ((!cruise_active) && car_speed < 30.0)))
+                        ((cruise_active && vehicle_speed < 21.5) || ((!cruise_active) && vehicle_speed < 25.5)))
                     {
                       // no lead car, clear mini_car 0x20
                       RxData[2] &= 0xDF;
@@ -1127,7 +1128,7 @@ int main(void)
   can_overflow_cnt = 0;
 
   low_speed_lockout = 3;
-  car_speed = 0;
+  vehicle_speed = 0;
   cruise_active = false;
 
   acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
