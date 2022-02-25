@@ -998,7 +998,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                     // engage at 30kph, disengage at 25kph
                     // disable lead car to disengage, or disable engagement
                     if ((features & F_ACC_SPEED_LOCKOUT) &&
-                        ((cruise_active && vehicle_speed < 21.5) || ((!cruise_active) && vehicle_speed < 25.5)))
+                        ((cruise_active && vehicle_speed < 20.0) || ((!cruise_active) && vehicle_speed < 25.0)))
                     {
                       // no lead car, clear mini_car 0x20
                       RxData[2] &= 0xDF;
