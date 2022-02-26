@@ -187,52 +187,6 @@ void update_crash_state()
 // ******************************** UART buffers ********************************
 UART_BUFFER(debug, DEBUG_FIFO_SIZE)
 
-void tx_ring_buffer(ring_buffer *q)
-{
-  if (q->w_ptr_tx == q->r_ptr_tx)
-  {
-    return;
-  }
-
-  CAN_TxHeaderTypeDef TxHeader;
-  TxHeader.RTR = CAN_RTR_DATA;
-  TxHeader.IDE = CAN_ID_STD;
-  TxHeader.TransmitGlobalTime = DISABLE;
-  TxHeader.ExtId = 0x001;
-  TxHeader.StdId = CAN_FILTER_LOG;
-  TxHeader.DLC = 0;
-  uint8_t Data[8];
-
-  // log
-  uint32_t TxMailbox;
-
-  ENTER_CRITICAL();
-  while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) &&
-          q->w_ptr_tx != q->r_ptr_tx &&
-          TxHeader.DLC < 8)
-  {
-    Data[TxHeader.DLC++] = q->elems_tx[q->r_ptr_tx];
-    q->r_ptr_tx = (q->r_ptr_tx + 1U) % q->tx_fifo_size;
-  }
-
-  if (TxHeader.DLC > 0)
-  {
-    if (HAL_CAN_AddTxMessage(&hcan1, &TxHeader, Data, &TxMailbox) != HAL_OK)
-    {
-      /* Transmission request Error */
-      Error_Handler();
-    }
-
-    can_tx_cnt ++;
-  }
-  EXIT_CRITICAL();
-}
-
-void tx_debug_ring()
-{
-    tx_ring_buffer(&ring_buffer_debug);
-}
-
 void clear_ring_buffer(ring_buffer *q) {
   ENTER_CRITICAL();
   q->w_ptr_tx = 0;
@@ -257,7 +211,6 @@ static bool dbg_putc(ring_buffer *q, char elem) {
     ret = true;
   }
   EXIT_CRITICAL();
-  //tx_ring_buffer(q);
   return ret;
 }
 
@@ -745,11 +698,11 @@ void save_features()
   HAL_FLASH_Lock();
 }
 
-void isotp_start_tx()
+void isotp_tx()
 {
   isotp_tx_ptr = isotp_tx_buf;
-  isotp_tx_index = 0;
-  if (isotp_tx_remain <= 0)
+  isotp_tx_index = 1;
+  if (isotp_tx_remain <= 0 || isotp_tx_remain > sizeof(isotp_tx_buf) - 0x10)
     return;
 
   if (isotp_tx_remain <= 7)
@@ -782,16 +735,31 @@ void isotp_start_tx()
     memcpy(tx.Data + 2, isotp_tx_ptr, 6);
     isotp_tx_remain -= 6;
     isotp_tx_ptr += 6;
-    isotp_tx_index ++;
     can_send_errs += can_push(can_queues[0], &tx) ? 0U: 1U;
   }
 }
 
-int isotp_on_message(uint8_t* rx_buf, int len, uint8_t* tx_buf)
+int isotp_on_message(uint8_t* rx_buf, int len, uint8_t* tx_buf, int tx_size)
 {
   uint8_t type = rx_buf[0];
   switch (type)
   {
+    // log
+    case 0x00:
+      {
+        int len = 0;
+        ring_buffer* q = &ring_buffer_debug;
+        ENTER_CRITICAL();
+        while (q->w_ptr_tx != q->r_ptr_tx && len < tx_size)
+        {
+          tx_buf[len++] = q->elems_tx[q->r_ptr_tx];
+          q->r_ptr_tx = (q->r_ptr_tx + 1U) % q->tx_fifo_size;
+        }
+        EXIT_CRITICAL();
+        return len;
+      }
+      break;
+
     // signature
     case 0x01:
       {
@@ -978,7 +946,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               CANMessage tx;
               tx.Size = 8;
               tx.Id = CAN_FILTER_ISOTP_TX;
-              tx.Data[0] = 0x20 | isotp_tx_index;
+              tx.Data[0] = 0x20 | (isotp_tx_index & 0xF);
               memcpy(tx.Data + 1, isotp_tx_ptr, 7);
               isotp_tx_remain -= 7;
               isotp_tx_ptr += 7;
@@ -1001,8 +969,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               {
                 // call on message
                 int len = isotp_rx_ptr - isotp_rx_buf + isotp_rx_remain;
-                isotp_tx_remain = isotp_on_message(isotp_rx_buf, len, isotp_tx_buf);
-                isotp_start_tx();
+                isotp_tx_remain = isotp_on_message(isotp_rx_buf, len, isotp_tx_buf, sizeof(isotp_tx_buf) - 0x10);
+                isotp_tx();
               }
             }
           }
@@ -1037,8 +1005,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           {
             int len = RxData[0] & 0xF;
             // call on message
-            isotp_tx_remain = isotp_on_message(isotp_rx_buf, len, isotp_tx_buf); 
-            isotp_start_tx();
+            isotp_tx_remain = isotp_on_message(isotp_rx_buf, len, isotp_tx_buf, sizeof(isotp_tx_buf) - 0x10);
+            isotp_tx();
           }
 
           // no forward
@@ -1333,7 +1301,6 @@ int main(void)
   isotp_tx_remain = 0;
   isotp_tx_index = 0;
 
-
   load_features();
 
   if (features & F_FORCE_PASSTHRU)
@@ -1419,7 +1386,6 @@ int main(void)
   debug_ring_ready = true;
 
   dbg_puts("can filter starts!\n");
-  tx_debug_ring();
 
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig2;
@@ -1482,7 +1448,6 @@ int main(void)
     HAL_IWDG_Refresh(&hiwdg);
 #endif
 
-    tx_debug_ring();
 
     process_can(0, false);
 
