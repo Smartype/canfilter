@@ -56,16 +56,14 @@ uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_
 
 // input
 #define CAN_FILTER_INPUT_MAGIC      0x2A0U  // 672
-#define CAN_FILTER_ACC_CONTROL      0x2A1U  // 673
-#define CAN_FILTER_PRE_COLLISION_2  0x2A2U  // 674
-#define CAN_FILTER_ISOTP_RX         0x2A3U  // 684
+#define CAN_FILTER_ISOTP_RX         0x2A1U  // 673
+#define CAN_FILTER_ACC_CONTROL      0x2A2U  // 674
+#define CAN_FILTER_PRE_COLLISION_2  0x2A3U  // 684
 
 // output
 #define CAN_FILTER_STATE            0x2A8U  // 680
-#define CAN_FILTER_ERROR            0x2A9U  // 681
-#define CAN_FILTER_LOG              0x2AAU  // 682
-#define CAN_FILTER_ACC_CONTROL_COPY 0x2ABU  // 683
-#define CAN_FILTER_ISOTP_TX         0x2ACU  // 684
+#define CAN_FILTER_ISOTP_TX         0x2A9U  // 681
+#define CAN_FILTER_ACC_CONTROL_COPY 0x2AAU  // 682
 
 void __initialize_hardware_early(void) {
   early_initialization();
@@ -98,7 +96,6 @@ uint32_t can_rx_cnt = 0;
 uint32_t can_tx_cnt = 0;
 uint32_t can_txd_cnt = 0;
 uint32_t can_err_cnt = 0;
-uint32_t can_csum_err_cnt = 0;
 uint32_t can_overflow_cnt = 0;
 
 /* Private variables ---------------------------------------------------------*/
@@ -121,7 +118,6 @@ bool pre_collision_2_present = false;
 uint32_t aeb_timeout = MAX_AEB_TIMEOUT;
 
 uint8_t status_tick_count = 0;
-uint8_t error_tick_count = 0;
 bool debug_ring_ready = false;
 
 uint8_t crash_state;
@@ -194,24 +190,20 @@ void clear_ring_buffer(ring_buffer *q) {
   EXIT_CRITICAL();
 }
 
-static bool dbg_putc(ring_buffer *q, char elem) {
+static void dbg_putc(ring_buffer *q, char elem) {
   if (!debug_ring_ready)
   {
-    return false;
+    return;
   }
-
-  bool ret = false;
-  uint16_t next_w_ptr;
 
   ENTER_CRITICAL();
-  next_w_ptr = (q->w_ptr_tx + 1U) % q->tx_fifo_size;
-  if (next_w_ptr != q->r_ptr_tx) {
-    q->elems_tx[q->w_ptr_tx] = elem;
-    q->w_ptr_tx = next_w_ptr;
-    ret = true;
+  q->elems_tx[q->w_ptr_tx] = elem;
+  q->w_ptr_tx = (q->w_ptr_tx + 1U) % q->tx_fifo_size;
+  if (q->w_ptr_tx == q->r_ptr_tx) {
+    q->r_ptr_tx = (q->r_ptr_tx + 1U) % q->tx_fifo_size;
   }
   EXIT_CRITICAL();
-  return ret;
+  return;
 }
 
 void dbg_putch(const char a) {
@@ -487,10 +479,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       SG_ CAN2_STATUS : 0|3@1+ (1,0) [0|7] "" XXX
       SG_ CAN1_STATUS : 3|3@1+ (1,0) [0|7] "" XXX
       SG_ CRASH_STATE : 7|2@0+ (1,0) [0|3] "" XXX
-      SG_ VERSION_BYTE_1 : 15|8@0+ (1,0) [0|255] "" XXX
-      SG_ VERSION_BYTE_2 : 23|8@0+ (1,0) [0|255] "" XXX
-      SG_ VERSION_BYTE_3 : 31|8@0+ (1,0) [0|255] "" XXX
-      SG_ VERSION_BYTE_4 : 39|8@0+ (1,0) [0|255] "" XXX
+      SG_ CAN_RX_ERR : 15|8@0+ (1,0) [0|255] "" XXX
+      SG_ CAN_SEND_ERR : 23|8@0+ (1,0) [0|255] "" XXX
+      SG_ CAN_ERR : 31|8@0+ (1,0) [0|255] "" XXX
+      SG_ CAN_OVERFLOW : 39|8@0+ (1,0) [0|255] "" XXX
       SG_ UPTIME_SECONDS : 47|16@0+ (1,0) [0|65535] "" XXX
       SG_ ACC_CONTROL_TIMEOUT : 60|5@0+ (1,0) [0|255] "" XXX
       SG_ AEB_TIMEOUTS : 61|1@0+ (1,0) [0|1] "" XXX
@@ -513,8 +505,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       status = HAL_CAN_GetState(&hcan2);
       to_fwd.Data[0] |= status;
 
-      // git version
-      memcpy(to_fwd.Data + 1, gitversion, sizeof(gitversion));
+      to_fwd.Data[1] = can_rx_errs & 0xFF;
+      to_fwd.Data[2] = can_send_errs & 0xFF;
+      to_fwd.Data[3] = can_err_cnt & 0xFF;
+      to_fwd.Data[4] = can_overflow_cnt & 0xFF;
 
       // uptime, 18 hours at most
       uint16_t uptime = HAL_GetTick() / 1000;
@@ -543,57 +537,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       }
 
       can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
-    }
 
-    // 1Hz
-    if (++ error_tick_count >= 100)
-    {
-      error_tick_count = 0;
-
-      // error status
-      CANMessage to_fwd;
-      to_fwd.Size = CAN_FILTER_SIZE;
-      to_fwd.Id = CAN_FILTER_ERROR;
-
-      /*
-      BO_ 674 CAN_FILTER_ERROR: 8 XXX
-      SG_ RX_ERR : 7|8@0+ (1,0) [0|255] "" XXX
-      SG_ SEND_ERR : 15|8@0+ (1,0) [0|255] "" XXX
-      SG_ RX_CNT : 23|8@0+ (1,0) [0|255] "" XXX
-      SG_ TX_CNT : 31|8@0+ (1,0) [0|255] "" XXX
-      SG_ TXD_CNT : 39|8@0+ (1,0) [0|255] "" XXX
-      SG_ CAN_ERR : 47|8@0+ (1,0) [0|255] "" XXX
-      SG_ CSUM_ERR : 55|8@0+ (1,0) [0|255] "" XXX
-      SG_ OVERFLOW : 63|8@0+ (1,0) [0|255] "" XXX
-      */
-
-      #define GET_ERROR(x) (x > 0xFF) ? 0xFF : (x)
-      to_fwd.Data[0] = GET_ERROR(can_rx_errs);
-      to_fwd.Data[1] = GET_ERROR(can_send_errs);
-      to_fwd.Data[2] = GET_ERROR(can_rx_cnt);
-      to_fwd.Data[3] = GET_ERROR(can_tx_cnt);
-      to_fwd.Data[4] = GET_ERROR(can_txd_cnt);
-      to_fwd.Data[5] = GET_ERROR(can_err_cnt);
-      to_fwd.Data[6] = GET_ERROR(can_csum_err_cnt);
-      to_fwd.Data[7] = GET_ERROR(can_overflow_cnt);
-      #undef GET_ERROR
-
-      // clear at every msg
-      can_rx_errs = 0;
-      can_send_errs = 0;
-      can_rx_cnt = 0;
-      can_tx_cnt = 0;
-      can_txd_cnt = 0;
-      can_err_cnt = 0;
-      can_csum_err_cnt = 0;
-      can_overflow_cnt = 0;
-
-      can_send_errs += can_push(can_queues[0], &to_fwd) ? 0U : 1U;
-    }
-
-    if (status_tick_count == 0 || error_tick_count == 0)
-    {
-      // send
       process_can(0, false);
     }
   }
@@ -770,17 +714,38 @@ int isotp_on_message(uint8_t* rx_buf, int len, uint8_t* tx_buf, int tx_size)
       }
       break;
 
-    // git version
+    // state
     case 0x02:
       {
-        (void)memcpy(tx_buf, gitversion, sizeof(gitversion));
-        return sizeof(gitversion);
+        HAL_CAN_StateTypeDef state;
+        uint8_t* p = tx_buf;
+        uint16_t uptime = HAL_GetTick() / 1000;
+        (void)memcpy(p, &uptime, sizeof(uptime)); p += sizeof(uptime);
+        (void)memcpy(p, &crash_state, sizeof(crash_state)); p += sizeof(crash_state);
+        state = HAL_CAN_GetState(&hcan1);
+        (void)memcpy(p, &state, sizeof(state)); p += sizeof(state);
+        state = HAL_CAN_GetState(&hcan2);
+        (void)memcpy(p, &state, sizeof(state)); p += sizeof(state);
+        (void)memcpy(p, &acc_control_timeout, sizeof(acc_control_timeout)); p += sizeof(acc_control_timeout);
+        (void)memcpy(p, &aeb_timeout, sizeof(aeb_timeout)); p += sizeof(aeb_timeout);
+        (void)memcpy(p, &pre_collision_timeout, sizeof(pre_collision_timeout)); p += sizeof(pre_collision_timeout);
+        (void)memcpy(p, &pre_collision_2_timeout, sizeof(pre_collision_2_timeout)); p += sizeof(pre_collision_2_timeout);
+        (void)memcpy(p, gitversion, sizeof(gitversion)); p += sizeof(gitversion);
+        (void)memcpy(p, &features, sizeof(features)); p += sizeof(features);
+        (void)memcpy(p, &can_rx_errs, sizeof(uint32_t)); p += sizeof(uint32_t);
+        (void)memcpy(p, &can_send_errs, sizeof(uint32_t)); p += sizeof(uint32_t);
+        (void)memcpy(p, &can_rx_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
+        (void)memcpy(p, &can_tx_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
+        (void)memcpy(p, &can_txd_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
+        (void)memcpy(p, &can_err_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
+        (void)memcpy(p, &can_overflow_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
+        return p - tx_buf;
       }
       break;
 
-
     default:
-      return -1;
+      tx_buf[0] = 0xFF;
+      return 1;
   }
 }
 
@@ -1275,7 +1240,6 @@ int main(void)
   can_tx_cnt = 0;
   can_txd_cnt = 0;
   can_err_cnt = 0;
-  can_csum_err_cnt = 0;
   can_overflow_cnt = 0;
 
   low_speed_lockout = 3;
@@ -1290,7 +1254,6 @@ int main(void)
   aeb_timeout = MAX_AEB_TIMEOUT;
 
   status_tick_count = 0;
-  error_tick_count = 0;
 
   debug_ring_ready = false;
 
