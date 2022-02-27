@@ -280,8 +280,8 @@ can_buffer(tx2_q, 0x100)
 
 can_ring *can_queues[] = {&can_tx1_q, &can_tx2_q};
 
-// cache for about 0.3 second
-can_buffer(acc_control_q, 0xA)
+// cache for about 0.5 second
+can_buffer(acc_control_q, 0x10)
 
 // ********************* interrupt safe queue *********************
 bool can_pop(can_ring *q, CANMessage *elem) {
@@ -1112,7 +1112,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                     // engage at 30kph, disengage at 25kph
                     // disable lead car to disengage, or disable engagement
                     if ((features & F_ACC_SPEED_LOCKOUT) &&
-                        ((cruise_active && vehicle_speed < 20.0) || ((!cruise_active) && vehicle_speed < 25.0)))
+                        ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
                     {
                       // no lead car, clear mini_car 0x20
                       RxData[2] &= 0xDF;
