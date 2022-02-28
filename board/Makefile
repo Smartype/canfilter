@@ -189,7 +189,7 @@ $(COMMOBJECTS)
 OBJECTS = $(BUILD_DIR)/main.o $(COMMOBJECTS) 
 
 $(BUILD_DIR)/gitversion.h:
-	./git-ver.py $(BUILD_DIR)/gitversion.h
+	./scripts/git-ver.py $(BUILD_DIR)/gitversion.h
 
 $(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR) $(BUILD_DIR)/gitversion.h
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
@@ -212,7 +212,7 @@ $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 	$(BIN) $< $@	
 
 $(BUILD_DIR)/$(TARGET).bin.signed: $(BUILD_DIR)/$(TARGET).bin
-	SETLEN=1 ./sign.py $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).bin.signed ./Core/Src/certs/debug
+	SETLEN=1 ./scripts/sign.py $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).bin.signed ./Core/Src/certs/debug
 
 $(BUILD_DIR):
 	mkdir $@		
