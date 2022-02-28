@@ -233,6 +233,11 @@ void putui(uint32_t i) {
   dbg_puts(&str[idx + 1U]);
 }
 
+void dbg_ts_puts(const char *a) {
+  putui(HAL_GetTick());
+  dbg_puts(a);
+}
+
 void puth(unsigned int i) {
   const char c[] = "0123456789abcdef";
   for (int pos = 28; pos != -4; pos -= 4) {
