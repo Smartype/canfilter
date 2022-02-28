@@ -81,12 +81,16 @@ PREFIX = arm-none-eabi-
 # either it can be added to the PATH environment variable.
 ifdef GCC_PATH
 CC = $(GCC_PATH)/$(PREFIX)gcc
-AS = $(GCC_PATH)/$(PREFIX)gcc -x assembler-with-cpp
+# failed to generate code on android
+#AS = $(GCC_PATH)/$(PREFIX)gcc -x assembler-with-cpp
+AS = $(GCC_PATH)/$(PREFIX)gcc
 CP = $(GCC_PATH)/$(PREFIX)objcopy
 SZ = $(GCC_PATH)/$(PREFIX)size
 else
 CC = $(PREFIX)gcc
-AS = $(PREFIX)gcc -x assembler-with-cpp
+# failed to generate code on android
+#AS = $(PREFIX)gcc -x assembler-with-cpp
+AS = $(PREFIX)gcc
 CP = $(PREFIX)objcopy
 SZ = $(PREFIX)size
 endif
