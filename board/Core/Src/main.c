@@ -1032,15 +1032,15 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // ACC CONTROL, 33.33Hz
         else if ((features & F_ACC_CONTROL) && RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
+          // copy to CAN 0 with a different id
+          to_fwd.Size = 8;
+          to_fwd.Id = CAN_FILTER_ACC_CONTROL_COPY;
+          memcpy(to_fwd.Data, RxData, 7);
+          to_fwd.Data[7] = toyota_checksum(CAN_FILTER_ACC_CONTROL_COPY, to_fwd.Data, 8);
+          can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
+
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
-            // copy to CAN 0 with a different id
-            to_fwd.Size = 8;
-            to_fwd.Id = CAN_FILTER_ACC_CONTROL_COPY;
-            memcpy(to_fwd.Data, RxData, 7);
-            to_fwd.Data[7] = toyota_checksum(CAN_FILTER_ACC_CONTROL_COPY, to_fwd.Data, 8);
-            can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
-
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
             {
