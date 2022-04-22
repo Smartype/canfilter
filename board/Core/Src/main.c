@@ -450,11 +450,11 @@ void isotp_tx()
     // separate time
     else if (isotp_tx_st > 0) {
       // in milliseconds
-      if (isotp_tx_st <= 127) {
+      if (isotp_tx_st <= 0x7F) {
         isotp_tx_tick = HAL_GetTick() + isotp_tx_st;
       }
       // 100 to 900 microseconds
-      else if (isotp_tx_st >= 0xF1 || isotp_tx_st <= 0xF9) {
+      else if (isotp_tx_st >= 0xF1 && isotp_tx_st <= 0xF9) {
         isotp_tx_tick = HAL_GetTick() + (isotp_tx_st - 0xF0) * 0.1;
       }
       break;
