@@ -452,12 +452,12 @@ void isotp_tx()
       // in milliseconds
       if (isotp_tx_st <= 127) {
         isotp_tx_tick = HAL_GetTick() + isotp_tx_st;
-        break;
       }
       // 100 to 900 microseconds
       else if (isotp_tx_st >= 0xF1 || isotp_tx_st <= 0xF9) {
         isotp_tx_tick = HAL_GetTick() + (isotp_tx_st - 0xF0) * 0.1;
       }
+      break;
     }
   }
 }
@@ -952,9 +952,16 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             // RxData[1]       : Block size
             // RxData[2]       : ST
             uint8_t fc = RxData[0] & 0x0F;
-            isotp_tx_bs = (RxData[1] == 0) ? 0xFF : RxData[1];
             isotp_tx_st = RxData[2];
             isotp_tx_tick = 0;
+            if (RxData[1] == 0) {
+              isotp_tx_st = 0;
+              isotp_tx_bs = 0xFF;
+            }
+            else {
+              isotp_tx_bs = RxData[1];
+            }
+
             // clear to send
             if (fc == 0) {
               isotp_tx();
