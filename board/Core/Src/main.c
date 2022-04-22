@@ -133,6 +133,9 @@ uint8_t isotp_tx_buf[ISOTP_BUF_SIZE];
 uint8_t* isotp_tx_ptr = NULL;
 int isotp_tx_remain = 0;
 int isotp_tx_index = 0;
+uint8_t isotp_tx_bs = 0;
+uint8_t isotp_tx_st = 0;
+uint32_t isotp_tx_tick = 0;
 
 extern uint32_t reserved_sram[4];
 extern int _app_start[];
@@ -424,6 +427,41 @@ void process_can(uint8_t can_number, bool tx_complete)
   EXIT_CRITICAL();
 }
 
+void isotp_tx()
+{
+  while (isotp_tx_remain > 0 && isotp_tx_bs > 0)
+  {
+    // 2: Consecutive frame (CF)
+    // A frame containing subsequent data for a multi-frame packet
+    CANMessage tx;
+    tx.Size = 8;
+    tx.Id = CAN_FILTER_ISOTP_TX;
+    tx.Data[0] = 0x20 | (isotp_tx_index & 0xF);
+    memcpy(tx.Data + 1, isotp_tx_ptr, 7);
+    isotp_tx_remain -= 7;
+    isotp_tx_ptr += 7;
+    isotp_tx_index ++;
+    can_send_errs += can_push(can_queues[0], &tx) ? 0U: 1U;
+
+    // block size
+    if (--isotp_tx_bs == 0) {
+      break;
+    }
+    // separate time
+    else if (isotp_tx_st > 0) {
+      // in milliseconds
+      if (isotp_tx_st <= 127) {
+        isotp_tx_tick = HAL_GetTick() + isotp_tx_st;
+        break;
+      }
+      // 100 to 900 microseconds
+      else if (isotp_tx_st >= 0xF1 || isotp_tx_st <= 0xF9) {
+        isotp_tx_tick = HAL_GetTick() + (isotp_tx_st - 0xF0) * 0.1;
+      }
+    }
+  }
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   (void)htim;
@@ -467,10 +505,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     aeb_timeout += 10U;
   }
 
+  if (isotp_tx_tick < HAL_GetTick()) {
+    isotp_tx();
+  }
+
   if (crash_state != CRASH_STATE_PASSTHRU)
   {
-    // 2Hz
-    if (++ status_tick_count >= 50)
+    // 5Hz
+    if (++ status_tick_count >= 20)
     {
       status_tick_count = 0;
 
@@ -480,7 +522,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       to_fwd.Id = CAN_FILTER_STATE;
 
       /*
-      BO_ 673 CAN_FILTER_STATE: 8 XXX
+      BO_ 680 CAN_FILTER_STATE: 8 XXX
       SG_ CAN2_STATUS : 0|3@1+ (1,0) [0|7] "" XXX
       SG_ CAN1_STATUS : 3|3@1+ (1,0) [0|7] "" XXX
       SG_ CRASH_STATE : 7|2@0+ (1,0) [0|3] "" XXX
@@ -647,7 +689,7 @@ void save_features()
   HAL_FLASH_Lock();
 }
 
-void isotp_tx()
+void isotp_tx_start()
 {
   isotp_tx_ptr = isotp_tx_buf;
   isotp_tx_index = 1;
@@ -906,22 +948,26 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           // It lays down the parameters for the transmission of further consecutive frames.
           if (type == (0x3 << 4))
           {
-            // RxData[0] & 0xF : FC flag (0,1,2)
+            // RxData[0] & 0xF : FC flag (0: Clear to send, 1: Wait, 2: Overflow)
             // RxData[1]       : Block size
             // RxData[2]       : ST
-            while (isotp_tx_remain > 0)
-            {
-              // 2: Consecutive frame (CF)
-              // A frame containing subsequent data for a multi-frame packet
-              CANMessage tx;
-              tx.Size = 8;
-              tx.Id = CAN_FILTER_ISOTP_TX;
-              tx.Data[0] = 0x20 | (isotp_tx_index & 0xF);
-              memcpy(tx.Data + 1, isotp_tx_ptr, 7);
-              isotp_tx_remain -= 7;
-              isotp_tx_ptr += 7;
-              isotp_tx_index ++;
-              can_send_errs += can_push(can_queues[0], &tx) ? 0U: 1U;
+            uint8_t fc = RxData[0] & 0x0F;
+            isotp_tx_bs = (RxData[1] == 0) ? 0xFF : RxData[1];
+            isotp_tx_st = RxData[2];
+            isotp_tx_tick = 0;
+            // clear to send
+            if (fc == 0) {
+              isotp_tx();
+            }
+            // wait
+            else if (fc == 1) {
+              // pause sending
+              isotp_tx_bs = 0;
+            }
+            // overflow
+            else if (fc == 2) {
+              // abort sending
+              isotp_tx_remain = 0;
             }
           }
           // 2: Consecutive frame (CF)
@@ -940,7 +986,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                 // call on message
                 int len = isotp_rx_ptr - isotp_rx_buf + isotp_rx_remain;
                 isotp_tx_remain = isotp_on_message(isotp_rx_buf, len, isotp_tx_buf, sizeof(isotp_tx_buf) - 0x10);
-                isotp_tx();
+                isotp_tx_start();
               }
             }
           }
@@ -965,7 +1011,9 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             tx.Id = CAN_FILTER_ISOTP_TX;
             // 3: Flow control frame (FC)
             RxData[0] = (0x3 << 4);
-            memset(RxData + 1, 0, 7);
+            RxData[1] = 0; // BS
+            RxData[2] = 0; // ST
+            memset(RxData + 3, 0xAA, 5);
             can_send_errs += can_push(can_queues[0], &tx) ? 0U: 1U;
           }
           // 0: Single frame (SF)
@@ -976,7 +1024,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             int len = RxData[0] & 0xF;
             // call on message
             isotp_tx_remain = isotp_on_message(RxData + 1, len, isotp_tx_buf, sizeof(isotp_tx_buf) - 0x10);
-            isotp_tx();
+            isotp_tx_start();
           }
 
           // no forward
