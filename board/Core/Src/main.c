@@ -770,9 +770,9 @@ int isotp_on_message(uint8_t* rx_buf, int len, uint8_t* tx_buf, int tx_size)
         (void)memcpy(p, &uptime, sizeof(uptime)); p += sizeof(uptime);
         (void)memcpy(p, &crash_state, sizeof(crash_state)); p += sizeof(crash_state);
         state = HAL_CAN_GetState(&hcan1);
-        (void)memcpy(p, &state, sizeof(state)); p += sizeof(state);
+        *p = (uint8_t)state; p += sizeof(uint8_t);
         state = HAL_CAN_GetState(&hcan2);
-        (void)memcpy(p, &state, sizeof(state)); p += sizeof(state);
+        *p = (uint8_t)state; p += sizeof(uint8_t);
         (void)memcpy(p, &acc_control_timeout, sizeof(acc_control_timeout)); p += sizeof(acc_control_timeout);
         (void)memcpy(p, &aeb_timeout, sizeof(aeb_timeout)); p += sizeof(aeb_timeout);
         (void)memcpy(p, &pre_collision_timeout, sizeof(pre_collision_timeout)); p += sizeof(pre_collision_timeout);
