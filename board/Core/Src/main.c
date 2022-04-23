@@ -766,7 +766,7 @@ int isotp_on_message(uint8_t* rx_buf, int len, uint8_t* tx_buf, int tx_size)
       {
         HAL_CAN_StateTypeDef state;
         uint8_t* p = tx_buf;
-        uint16_t uptime = HAL_GetTick() / 1000;
+        uint32_t uptime = HAL_GetTick();
         (void)memcpy(p, &uptime, sizeof(uptime)); p += sizeof(uptime);
         (void)memcpy(p, &crash_state, sizeof(crash_state)); p += sizeof(crash_state);
         state = HAL_CAN_GetState(&hcan1);
