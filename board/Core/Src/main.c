@@ -764,22 +764,24 @@ int isotp_on_message(uint8_t* rx_buf, int len, uint8_t* tx_buf, int tx_size)
     // state
     case 0x02:
       {
-        HAL_CAN_StateTypeDef state;
         uint8_t* p = tx_buf;
+        // version, crash_state, features
+        *p = (uint8_t)0x01; p += sizeof(uint8_t);
+        (void)memcpy(p, &crash_state, sizeof(crash_state)); p += sizeof(crash_state);
+        (void)memcpy(p, &features, sizeof(features)); p += sizeof(features);
+
+        // gitversion
+        (void)memcpy(p, gitversion, sizeof(gitversion)); p += sizeof(gitversion);
+
+        // uptime
         uint32_t uptime = HAL_GetTick();
         (void)memcpy(p, &uptime, sizeof(uptime)); p += sizeof(uptime);
-        (void)memcpy(p, &crash_state, sizeof(crash_state)); p += sizeof(crash_state);
-        ptr ++; // pad
-        state = HAL_CAN_GetState(&hcan1);
-        *p = (uint8_t)state; p += sizeof(uint8_t);
-        state = HAL_CAN_GetState(&hcan2);
-        *p = (uint8_t)state; p += sizeof(uint8_t);
+
+        // counters
         (void)memcpy(p, &acc_control_timeout, sizeof(acc_control_timeout)); p += sizeof(acc_control_timeout);
         (void)memcpy(p, &aeb_timeout, sizeof(aeb_timeout)); p += sizeof(aeb_timeout);
         (void)memcpy(p, &pre_collision_timeout, sizeof(pre_collision_timeout)); p += sizeof(pre_collision_timeout);
         (void)memcpy(p, &pre_collision_2_timeout, sizeof(pre_collision_2_timeout)); p += sizeof(pre_collision_2_timeout);
-        (void)memcpy(p, gitversion, sizeof(gitversion)); p += sizeof(gitversion);
-        (void)memcpy(p, &features, sizeof(features)); p += sizeof(features);
         (void)memcpy(p, &can_rx_errs, sizeof(uint32_t)); p += sizeof(uint32_t);
         (void)memcpy(p, &can_send_errs, sizeof(uint32_t)); p += sizeof(uint32_t);
         (void)memcpy(p, &can_rx_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
@@ -787,6 +789,15 @@ int isotp_on_message(uint8_t* rx_buf, int len, uint8_t* tx_buf, int tx_size)
         (void)memcpy(p, &can_txd_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
         (void)memcpy(p, &can_err_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
         (void)memcpy(p, &can_overflow_cnt, sizeof(uint32_t)); p += sizeof(uint32_t);
+
+        // can states
+        HAL_CAN_StateTypeDef state = HAL_CAN_GetState(&hcan1);
+        *p = (uint8_t)state; p += sizeof(uint8_t);
+        state = HAL_CAN_GetState(&hcan2);
+        *p = (uint8_t)state; p += sizeof(uint8_t);
+        // pad
+        p += 2;
+
         return p - tx_buf;
       }
       break;
