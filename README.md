@@ -2,6 +2,8 @@
 
 This is a radar can message interceptor designed for Toyota NODSU camry. It is based on an STM32 mileage manipulator board.
 
+![Radar Interceptor](https://github.com/Smartype/canfilter/blob/master/board/resources/radar-interceptor.jpg?raw=true)
+
 ## Features
 - boot loader from commaai panda project, to support firmware updating on CAN bus
 - crash detection, on crash it will switch to passthrough failsafe mode
