@@ -2,9 +2,9 @@
 
 This is a radar can message interceptor designed for Toyota NODSU Camry/CH-R. It is based on an STM32 mileage manipulator board.
 
-For CH-R, it enables full speed ACC with openpilot.
-For Camry Hybrid/XLE/XSE, it enables full speed ACC with stock system and openpilot.
-For Camry LE/SE, it bypass 28mph(45kph) speed limit. But the ABS module drop braking request under 15mph(24kph). This limit applies to both stock system and openpilot.
+- or CH-R, it enables full speed ACC with openpilot.
+- For Camry Hybrid/XLE/XSE, it enables full speed ACC with stock system and openpilot.
+- For Camry LE/SE, it bypass 28mph(45kph) speed limit. But the ABS module ignores braking request under 15mph(24kph). This limit applies to both stock system and openpilot.
 
 ![Radar Interceptor](https://github.com/Smartype/canfilter/blob/master/board/resources/radar-interceptor.jpg?raw=true)
 
