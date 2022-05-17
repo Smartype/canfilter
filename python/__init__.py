@@ -94,7 +94,7 @@ class CanFilter(object):
         panda.can_send(CAN_FILTER_ADDR_MAGIC, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x01", 0)
 
   @staticmethod
-  def flash(panda):
+  def flash(panda, fw=None):
     # set heartbeat_engaged=True, all controls_allowed will be set to false in 3 seconds
     panda.send_heartbeat(True)
 
@@ -115,7 +115,9 @@ class CanFilter(object):
 
     # erase size
     print("flash: erasing")
-    code = open(DEFAULT_FW_FN, "rb").read()
+    if fw is None:
+      fw = DEFAULT_FW_FN
+    code = open(fw, "rb").read()
     handle.controlWrite(Panda.REQUEST_IN, 0xb3, len(code), 0, b'', timeout=10)
 
     # flash over EP2

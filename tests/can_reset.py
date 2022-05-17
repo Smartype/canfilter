@@ -2,7 +2,6 @@
 import time
 import argparse
 from panda import Panda
-from panda import CanHandle
 
 if __name__ == "__main__":
   p = Panda()

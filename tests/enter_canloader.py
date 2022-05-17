@@ -2,8 +2,7 @@
 import time
 import argparse
 from panda import Panda
-from panda import CanHandle
-
+from canfilter import CanFilter
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Flash can-filter over can')
@@ -27,8 +26,7 @@ if __name__ == "__main__":
   if args.fn:
     time.sleep(1)
     print("flashing", args.fn)
-    code = open(args.fn, "rb").read()
-    Panda.flash_can_static(CanHandle(p, 0), code)
+    CanFilter.flash(p, args.fn)
 
   print("can flash done")
 

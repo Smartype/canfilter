@@ -4,41 +4,30 @@ import time
 import struct
 import argparse
 from panda import Panda
-from panda import CanHandle
-
-ACC_CTRL  = 1
-ACC_INIT  = 2
-LOCKSPEED = 4
-FAKELEAD  = 8
-PASSTHRU  = 16
+from canfilter import CanFilter, FEATURE_ACC_CTRL, FEATURE_ACC_INIT, FEATURE_LOCKSPEED, FEATURE_FAKELEAD, FEATURE_PASSTHRU
 
 if __name__ == "__main__":
 
   if len(sys.argv) < 3:
     print(f'''usage:
     {sys.argv[0]} <features> <save-flash>
-
-ACC_CTRL  = 1
-ACC_INIT  = 2
-LOCKSPEED = 4
-FAKELEAD  = 8
-PASSTHRU  = 16''')
+    feaures: ACC_CTRL,ACC_INIT,LOCKSPEED,FAKELEAD,PASSTHRU''')
     sys.exit(1)
 
-  FEATURES = int(sys.argv[1])
+  FEATURES = sys.argv[1].split(",")
   SAVE = bool(int(sys.argv[2]))
-
-  f_str = ''
-  if FEATURES & ACC_CTRL:
-    f_str += "acc "
-  if FEATURES & ACC_INIT:
-    f_str += "init "
-  if FEATURES & LOCKSPEED:
-    f_str += "speed "
-  if FEATURES & FAKELEAD:
-    f_str += "lead "
-  if FEATURES & PASSTHRU:
-    f_str += "passthru"
+  features = 0
+  for f in FEATURES:
+    if f == 'ACC_CTRL':
+      features |= FEATURE_ACC_CTRL
+    elif f == 'ACC_INIT':
+      features |= FEATURE_ACC_INIT
+    elif f == 'LOCKSPEED':
+      features |= FEATURE_LOCKSPEED
+    elif f == 'FAKELEAD':
+      features |= FEATURE_FAKELEAD
+    elif f == 'PASSTHRU':
+      features |= FEATURE_PASSTHRU
 
   print(f"features: {f_str}, save: {SAVE}")
 
@@ -49,9 +38,4 @@ PASSTHRU  = 16''')
     if len(p.can_recv()) == 0:
       break
 
-  v = struct.pack('>BH', SAVE, FEATURES)
-  d = b"\xce\xfa\xad\xde\x1f" + v
-  print(d.hex())
-  p.can_send(0x2A0, d, 0)
-  #p.can_send(0x2A0, b"\xce\xfa\xad\xde\x1f\x01\xab\xcd", 0)
-
+  CanFilter.set_features(p, features, SAVE) 
