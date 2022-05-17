@@ -36,7 +36,7 @@
 #define F_FORCE_PASSTHRU      (1 << 4)
 #define CONFIG_PAGE_ADDRESS   0x803F800
 
-uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_LOW_SPEED_LEAD);
+uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT);
 
 // 10 msg
 #define MAX_ACC_CONTROL_TIMEOUT 300
@@ -655,7 +655,7 @@ void load_features()
 
   if (*p == 0xFFFF)
   {
-    features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT | F_LOW_SPEED_LEAD);
+    features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT);
   }
   else
   {
