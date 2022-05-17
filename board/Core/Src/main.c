@@ -137,6 +137,10 @@ uint8_t isotp_tx_bs = 0;
 uint8_t isotp_tx_st = 0;
 uint32_t isotp_tx_tick = 0;
 
+// car model
+bool is_hybrid = false;
+uint8_t stock_acc_type = 0;
+
 extern uint32_t reserved_sram[4];
 extern int _app_start[];
 
@@ -951,6 +955,11 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         {
           cruise_active = ((RxData[0] & 0x20) != 0) ? true : false;
         }
+        // GAS_PEDAL_HYBRID
+        else if ((!is_hybrid) && (RxHeader.StdId == 0x245 && RxHeader.DLC == 8))
+        {
+          is_hybrid = true;
+        }
         // ISOTP_RX
         else if (RxHeader.StdId == CAN_FILTER_ISOTP_RX && RxHeader.DLC == 8)
         {
@@ -1108,6 +1117,11 @@ void can_rx(uint8_t can_number, uint32_t fifo)
 
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
+            if (stock_acc_type == 0)
+            {
+              stock_acc_type = ((RxData[2] >> 6) & 0x03);
+            }
+
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
             {
@@ -1136,6 +1150,23 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               if ((RxData[3] & 0x2) != 0)
               {
                   to_fwd.Data[3] |= 0x2;
+              }
+
+              // 45 on dash
+              if (vehicle_speed < 41.5)
+              {
+                // engage at 30kph, disengage at 25kph
+                // disable lead car to disengage, or disable engagement
+                if ((features & F_ACC_SPEED_LOCKOUT) &&
+                    (stock_acc_type != 1) &&
+                    (!is_hybrid) &&
+                    ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
+                {
+                  // no lead car, clear mini_car 0x20
+                  to_fwd.Data[2] &= 0xDF;
+                  // lead standstill to 0, clear lead_standstill 0x20
+                  to_fwd.Data[3] &= 0xDF;
+                }
               }
 
               // overwrite (with content from EON)
@@ -1184,6 +1215,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                     // engage at 30kph, disengage at 25kph
                     // disable lead car to disengage, or disable engagement
                     if ((features & F_ACC_SPEED_LOCKOUT) &&
+                        (stock_acc_type != 1) &&
+                        (!is_hybrid) &&
                         ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
                     {
                       // no lead car, clear mini_car 0x20
@@ -1335,6 +1368,13 @@ int main(void)
   isotp_tx_ptr = NULL;
   isotp_tx_remain = 0;
   isotp_tx_index = 0;
+  isotp_tx_bs = 0;
+  isotp_tx_st = 0;
+  isotp_tx_tick = 0;
+
+  // car model detect
+  is_hybrid = false;
+  stock_acc_type = 0;
 
   load_features();
 
