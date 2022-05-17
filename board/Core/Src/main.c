@@ -29,14 +29,12 @@
 #include "stm32f1xx_it.c.h"
 #include "build/gitversion.h"
 
-#define F_ACC_CONTROL         (1 << 0)
-#define F_ACC_INIT_MAGIC      (1 << 1)
 #define F_ACC_SPEED_LOCKOUT   (1 << 2)
 #define F_LOW_SPEED_LEAD      (1 << 3)
 #define F_FORCE_PASSTHRU      (1 << 4)
 #define CONFIG_PAGE_ADDRESS   0x803F800
 
-uint16_t features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT);
+uint16_t features = (F_ACC_SPEED_LOCKOUT);
 
 // 10 msg
 #define MAX_ACC_CONTROL_TIMEOUT 300
@@ -655,7 +653,7 @@ void load_features()
 
   if (*p == 0xFFFF)
   {
-    features = (F_ACC_CONTROL | F_ACC_INIT_MAGIC | F_ACC_SPEED_LOCKOUT);
+    features = (F_ACC_SPEED_LOCKOUT);
   }
   else
   {
@@ -1106,7 +1104,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           }
         }
         // ACC CONTROL, 33.33Hz
-        else if ((features & F_ACC_CONTROL) && RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
+        else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
           // copy to CAN 0 with a different id
           to_fwd.Size = 8;
@@ -1176,7 +1174,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             else
             {
               // initializing, inject fake msg
-              if ((features & F_ACC_INIT_MAGIC) && low_speed_lockout == 3)
+              if (low_speed_lockout == 3)
               {
                 // mimic CH-R behavir
                 uint8_t acc_control[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };

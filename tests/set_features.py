@@ -18,11 +18,7 @@ if __name__ == "__main__":
   SAVE = bool(int(sys.argv[2]))
   features = 0
   for f in FEATURES:
-    if f == 'ACC_CTRL':
-      features |= FEATURE_ACC_CTRL
-    elif f == 'ACC_INIT':
-      features |= FEATURE_ACC_INIT
-    elif f == 'LOCKSPEED':
+    if f == 'LOCKSPEED':
       features |= FEATURE_LOCKSPEED
     elif f == 'FAKELEAD':
       features |= FEATURE_FAKELEAD
