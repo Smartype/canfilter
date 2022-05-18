@@ -201,7 +201,24 @@ class CanFilter(object):
     d = {}
     for x in fmt:
       if x[0] != 'x':
-        d[x[1]] = r[i]
+        if x[1] == 'features':
+          fl = [
+            (FEATURE_LOCKSPEED, "LOCKSPEED"),
+            (FEATURE_FAKELEAD, "FAKELEAD"),
+            (FEATURE_PASSTHRU, "PASSTHRU"),
+            (FEATURE_MIRROR_MSG, "MIRRORMSG"),
+            (FEATURE_SET_DISTANCE, "DISTANCEREQ")
+          ]
+
+          d[x[1]] = {}
+          for f in fl:
+            if (f[0] & r[i]) != 0:
+              d[x[1]][f[1]] = True
+            else:
+              d[x[1]][f[1]] = False
+        else:
+          d[x[1]] = r[i]
+
         i =+ 1
 
     return d
