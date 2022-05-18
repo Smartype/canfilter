@@ -1101,7 +1101,6 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
           {
             // drop msg is fixed 0x344,0x0000010000000050,8, do not have to copy to can 0
-
             return;
           }
         }
@@ -1131,8 +1130,11 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               // load ACC control (overwrite) msg
               if (!can_pop(&can_acc_control_q, &to_fwd))
               {
-                // send acc_control_copy before return
-                process_can(fwd_can, false);
+                if (features & F_MIRROR_ACC_MSG)
+                {
+                  // send acc_control_copy before return
+                  process_can(fwd_can, false);
+                }
                 return; // drop
               }
 
