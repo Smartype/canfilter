@@ -32,9 +32,11 @@
 #define F_ACC_SPEED_LOCKOUT   (1 << 2)
 #define F_LOW_SPEED_LEAD      (1 << 3)
 #define F_FORCE_PASSTHRU      (1 << 4)
+#define F_MIRROR_ACC_MSG      (1 << 5)
+#define F_SET_DISTANCE_REQ    (1 << 6)
 #define CONFIG_PAGE_ADDRESS   0x803F800
 
-uint16_t features = (F_ACC_SPEED_LOCKOUT);
+uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
 
 // 10 msg
 #define MAX_ACC_CONTROL_TIMEOUT 300
@@ -653,7 +655,7 @@ void load_features()
 
   if (*p == 0xFFFF)
   {
-    features = (F_ACC_SPEED_LOCKOUT);
+    features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
   }
   else
   {
@@ -1106,12 +1108,15 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // ACC CONTROL, 33.33Hz
         else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
-          // copy to CAN 0 with a different id
-          to_fwd.Size = 8;
-          to_fwd.Id = CAN_FILTER_ACC_CONTROL_COPY;
-          memcpy(to_fwd.Data, RxData, 7);
-          to_fwd.Data[7] = toyota_checksum(CAN_FILTER_ACC_CONTROL_COPY, to_fwd.Data, 8);
-          can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
+          if (features & F_MIRROR_ACC_MSG)
+          {
+            // copy to CAN 0 with a different id
+            to_fwd.Size = 8;
+            to_fwd.Id = CAN_FILTER_ACC_CONTROL_COPY;
+            memcpy(to_fwd.Data, RxData, 7);
+            to_fwd.Data[7] = toyota_checksum(CAN_FILTER_ACC_CONTROL_COPY, to_fwd.Data, 8);
+            can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
+          }
 
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
@@ -1148,6 +1153,15 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               if ((RxData[3] & 0x2) != 0)
               {
                   to_fwd.Data[3] |= 0x2;
+              }
+
+              // DISTANCE_REQ
+              if ((RxData[2] & 0x10) != 0)
+              {
+                if (((features & F_SET_DISTANCE_REQ) != 0) || ((features & F_MIRROR_ACC_MSG) == 0))
+                {
+                  to_fwd.Data[2] |= 0x10;
+                }
               }
 
               // 45 on dash
