@@ -880,7 +880,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           }
         }
       }
-      return;
+      continue;
     }
 
     // skip on failsafe
@@ -1079,7 +1079,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             // miss msg? wait for timeout
             if (!pre_collision_2_present)
             {
-                return; // drop
+              continue; // drop
             }
 
             // overwrite (with content from EON)
@@ -1101,7 +1101,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           if (!(aeb_timeout < MAX_AEB_TIMEOUT) && pre_collision_timeout < MAX_AEB_CONTROL_TIMEOUT)
           {
             // drop msg is fixed 0x344,0x0000010000000050,8, do not have to copy to can 0
-            return;
+            continue;
           }
         }
         // ACC CONTROL, 33.33Hz
@@ -1130,12 +1130,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               // load ACC control (overwrite) msg
               if (!can_pop(&can_acc_control_q, &to_fwd))
               {
-                if (features & F_MIRROR_ACC_MSG)
-                {
-                  // send acc_control_copy before return
-                  process_can(fwd_can, false);
-                }
-                return; // drop
+                continue; // drop
               }
 
               // enforce error display on dash
