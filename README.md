@@ -20,6 +20,9 @@ This is a radar can message interceptor designed for Toyota NODSU Camry/CH-R. It
 - ACC_CONTROL_COPY, it mirrors the stock ACC_CONTROL msg with a different msg id, so it can be logged/used in openpilot(for example, the DISTANCE_REQ bit)
 - stock ACC_CONTROL alert override, if OP long is engaged, while the stock ACC emits an alert(CUT IN), it will be merged into final ACC_CONTROL msg
 
+## Wiring
+Please check pictures in board/resources. The rader has 2 can buses, CAN1 is what we are going to intercept. The CAN1 on filter board to be connected to CAN gateway(the car), CAN2 to be connected to radar CAN1.
+
 ## License
 Code in this repository is released under the MIT license.
 
