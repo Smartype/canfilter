@@ -83,11 +83,11 @@ void NMI_Handler(void)
 #ifndef BOOTSTUB
   NVIC_SystemReset();
 #endif
-  
+
   while (1)
   {
   }
-  
+
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
 
@@ -314,11 +314,11 @@ void TIM6_IRQHandler(void)
 void CAN2_TX_IRQHandler(void)
 {
   /* USER CODE BEGIN CAN2_TX_IRQn 0 */
-  
+
   /* USER CODE END CAN2_TX_IRQn 0 */
   HAL_CAN_IRQHandler(&hcan2);
   /* USER CODE BEGIN CAN2_TX_IRQn 1 */
-  
+
 
   /* USER CODE END CAN2_TX_IRQn 1 */
 }

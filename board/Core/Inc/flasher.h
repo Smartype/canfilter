@@ -132,8 +132,8 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
       }
       break;
 */
-    
-    // **** 0xb3: erase size 
+
+    // **** 0xb3: erase size
     case 0xb3:
       size = setup->b.wValue.w;
       if (flash_erase_size(size, unlocked)) {
@@ -147,7 +147,7 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
       flash_lock();
       resp[1] = 0xff;
       break;
-    
+
     // **** 0xd1: enter bootloader mode
     case 0xd1:
       switch (setup->b.wValue.w) {
@@ -372,7 +372,7 @@ void soft_flasher_start(void) {
   enter_bootloader_mode = 0;
 
   // TODO: Init flash peripherals
- 
+
   /* Configure the CAN Filter */
   CAN_FilterTypeDef sFilterConfig1;
   sFilterConfig1.FilterBank = 0;
