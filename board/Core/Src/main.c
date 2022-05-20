@@ -140,6 +140,7 @@ uint32_t isotp_tx_tick = 0;
 // car model
 bool is_hybrid = false;
 uint8_t stock_acc_type = 0;
+uint32_t speed_lockout_tick = 0;
 
 extern uint32_t reserved_sram[4];
 extern int _app_start[];
@@ -1171,6 +1172,11 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                     (!is_hybrid) &&
                     ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
                 {
+                  speed_lockout_tick = HAL_GetTick();
+                }
+
+                if (speed_lockout_tick + 500 > HAL_GetTick())
+                {
                   // no lead car, clear mini_car 0x20
                   to_fwd.Data[2] &= 0xDF;
                   // lead standstill to 0, clear lead_standstill 0x20
@@ -1228,10 +1234,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                         (!is_hybrid) &&
                         ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
                     {
-                      // no lead car, clear mini_car 0x20
-                      RxData[2] &= 0xDF;
-                      // lead standstill to 0, clear lead_standstill 0x20
-                      RxData[3] &= 0xDF;
+                      speed_lockout_tick = HAL_GetTick();
                     }
                     // fake moving lead
                     else if (features & F_LOW_SPEED_LEAD)
@@ -1244,6 +1247,14 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                         // lead standstill to 0, clear lead_standstill 0x20
                         RxData[3] &= 0xDF;
                       }
+                    }
+
+                    if (speed_lockout_tick + 500 > HAL_GetTick())
+                    {
+                      // no lead car, clear mini_car 0x20
+                      RxData[2] &= 0xDF;
+                      // lead standstill to 0, clear lead_standstill 0x20
+                      RxData[3] &= 0xDF;
                     }
                   }
 
@@ -1384,6 +1395,7 @@ int main(void)
   // car model detect
   is_hybrid = false;
   stock_acc_type = 0;
+  speed_lockout_tick = 0;
 
   load_features();
 
