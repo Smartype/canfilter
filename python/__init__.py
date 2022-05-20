@@ -219,7 +219,7 @@ class CanFilter(object):
         else:
           d[x[1]] = r[i]
 
-        i =+ 1
+        i += 1
 
     return d
 

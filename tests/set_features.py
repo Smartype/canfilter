@@ -31,8 +31,6 @@ if __name__ == "__main__":
     else:
       raise f
 
-  print(f"features: {f_str}, save: {SAVE}")
-
   p = Panda()
   p.set_safety_mode(Panda.SAFETY_ALLOUTPUT)
 
@@ -40,4 +38,4 @@ if __name__ == "__main__":
     if len(p.can_recv()) == 0:
       break
 
-  CanFilter.set_features(p, features, save) 
+  CanFilter.set_features(p, features, save)
