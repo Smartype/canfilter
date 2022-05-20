@@ -34,7 +34,6 @@
 #define F_FORCE_PASSTHRU      (1 << 4)
 #define F_MIRROR_ACC_MSG      (1 << 5)
 #define F_SET_DISTANCE_REQ    (1 << 6)
-#define CONFIG_PAGE_ADDRESS   0x803F800
 
 uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
 
@@ -141,6 +140,9 @@ uint32_t isotp_tx_tick = 0;
 bool is_hybrid = false;
 uint8_t stock_acc_type = 0;
 uint32_t speed_lockout_tick = 0;
+
+// features config
+uint32_t config_page_address = 0x803F800;
 
 extern uint32_t reserved_sram[4];
 extern int _app_start[];
@@ -647,9 +649,9 @@ void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
 
 void load_features()
 {
-  uint16_t *p = (uint16_t*)(CONFIG_PAGE_ADDRESS + FLASH_PAGE_SIZE - sizeof(uint16_t));
+  uint16_t *p = (uint16_t*)(config_page_address + FLASH_PAGE_SIZE - sizeof(uint16_t));
   // find last init u16
-  while (*p == 0xFFFF && p > (uint16_t*)CONFIG_PAGE_ADDRESS)
+  while (*p == 0xFFFF && p > (uint16_t*)config_page_address)
   {
     p --;
   }
@@ -666,9 +668,9 @@ void load_features()
 
 void save_features()
 {
-  uint16_t *p = (uint16_t*)CONFIG_PAGE_ADDRESS;
+  uint16_t *p = (uint16_t*)config_page_address;
   // find first un-init u16
-  while (*p != 0xFFFF && p < (uint16_t*)(CONFIG_PAGE_ADDRESS + FLASH_PAGE_SIZE))
+  while (*p != 0xFFFF && p < (uint16_t*)(config_page_address + FLASH_PAGE_SIZE))
   {
     p ++;
   }
@@ -679,7 +681,7 @@ void save_features()
     // erase
     FLASH_EraseInitTypeDef erase;
     erase.TypeErase = FLASH_TYPEERASE_PAGES;
-    erase.PageAddress = CONFIG_PAGE_ADDRESS;
+    erase.PageAddress = config_page_address;
     erase.NbPages = 1;
     uint32_t PageError;
     if (HAL_FLASHEx_Erase(&erase, &PageError) != HAL_OK)
@@ -687,7 +689,7 @@ void save_features()
         Error_Handler();
     }
     while (FLASH->SR & FLASH_SR_BSY);
-    p = (uint16_t*)CONFIG_PAGE_ADDRESS;
+    p = (uint16_t*)config_page_address;
   }
 
   HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, (uint32_t)p, features);
@@ -1396,6 +1398,9 @@ int main(void)
   is_hybrid = false;
   stock_acc_type = 0;
   speed_lockout_tick = 0;
+
+  // feature config page
+  config_page_address = 0x8000000 + LL_GetFlashSize() * 1024 - FLASH_PAGE_SIZE;
 
   load_features();
 
