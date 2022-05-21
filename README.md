@@ -31,7 +31,8 @@ The board comes with flash read out protection, you will need STM32 ST-LINK Util
 
 1. To put the device to DEBUG mode, first connect NRST to GND, power it and then disconnect NRST.
 2. Disable Read Out Protection in Target/Option Bytes.. in STM32 ST-LINK Utility
-3. Flash
+3. Erase chip
+4. Flash
 
 ```
 eric@ubuntu:~$ st-info --probe
