@@ -21,8 +21,8 @@ This is a radar can message interceptor designed for Toyota NODSU Camry/CH-R. It
 - stock ACC_CONTROL alert override, if OP long is engaged, while the stock ACC emits an alert(CUT IN), it will be merged into final ACC_CONTROL msg
 
 ## Wiring
-Please check pictures in board/resources. The radar has 2 can buses, CAN1 is what we are going to intercept.
-The CAN1 on filter board should be connected to CAN gateway(the car), CAN2 to be connected to radar CAN1.
+Please check pictures in board/resources. The radar has 2 can buses, CAN2 (not the bus between radar and camera) is what we are going to intercept.
+The CAN1 on filter board should be connected to CAN gateway(the car), CAN2 to be connected to radar CAN2.
 Double check the wiring, especially GND and 12V pins, or you will fry your radar!
 
 
