@@ -3,6 +3,7 @@ import sys
 import time
 import struct
 import argparse
+import pprint
 from panda import Panda
 from canfilter import CanFilter
 
@@ -16,4 +17,4 @@ if __name__ == "__main__":
       break
 
   st = CanFilter.get_state(p)
-  print(st)
+  pprint.pprint(st)

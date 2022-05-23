@@ -3,6 +3,7 @@ import struct
 import sys
 import os
 import time
+import binascii
 from panda import Panda
 
 __version__ = '0.0.1'
@@ -167,12 +168,12 @@ class CanFilter(object):
     panda.set_safety_mode(Panda.SAFETY_ALLOUTPUT, True)
     st = ch.transact(dat)
     fmt = [
-      ('B', 'version'),
+      ('B', 'cfg_version'),
       ('B', 'crash_state'),
       ('H', 'features'),
 
       ('4s', 'git_version'),
-      ('I', 'uptime'),
+      ('I', 'uptime_millis'),
       ('I', 'acc_ctrl_timeout'),
       ('I', 'aeb_timeout'),
       ('I', 'pre_colli_timeout'),
@@ -201,7 +202,9 @@ class CanFilter(object):
     d = {}
     for x in fmt:
       if x[0] != 'x':
-        if x[1] == 'features':
+        if x[1] == 'git_version':
+          d[x[1]] = binascii.b2a_hex(r[i]).decode()
+        elif x[1] == 'features':
           fl = [
             (FEATURE_LOCKSPEED, "LOCKSPEED"),
             (FEATURE_FAKELEAD, "FAKELEAD"),
