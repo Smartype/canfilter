@@ -1229,17 +1229,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                   // 45 on dash
                   if (vehicle_speed < 41.5)
                   {
-                    // engage at 30kph, disengage at 25kph
-                    // disable lead car to disengage, or disable engagement
-                    if ((features & F_ACC_SPEED_LOCKOUT) &&
-                        (stock_acc_type != 1) &&
-                        (!is_hybrid) &&
-                        ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
-                    {
-                      speed_lockout_tick = HAL_GetTick();
-                    }
-                    // fake moving lead
-                    else if (features & F_LOW_SPEED_LEAD)
+                    if ((features & F_LOW_SPEED_LEAD) != 0)
                     {
                       // no lead car
                       if ((RxData[2] & 0x20) == 0)
@@ -1250,13 +1240,36 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                         RxData[3] &= 0xDF;
                       }
                     }
-
-                    if (speed_lockout_tick + 500 > HAL_GetTick())
+                    else
                     {
-                      // no lead car, clear mini_car 0x20
-                      RxData[2] &= 0xDF;
-                      // lead standstill to 0, clear lead_standstill 0x20
-                      RxData[3] &= 0xDF;
+                      // engage at 30kph, disengage at 25kph
+                      // disable lead car to disengage, or disable engagement
+                      if ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0))
+                      {
+                        if ((features & F_ACC_SPEED_LOCKOUT) && (stock_acc_type != 1) && (!is_hybrid))
+                        {
+                          speed_lockout_tick = HAL_GetTick();
+                        }
+                      }
+                      else
+                      {
+                        // no lead car
+                        if ((RxData[2] & 0x20) == 0)
+                        {
+                          // lead car
+                          RxData[2] |= 0x20;
+                          // lead standstill to 0, clear lead_standstill 0x20
+                          RxData[3] &= 0xDF;
+                        }
+                      }
+
+                      if (speed_lockout_tick + 500 > HAL_GetTick())
+                      {
+                        // no lead car, clear mini_car 0x20
+                        RxData[2] &= 0xDF;
+                        // lead standstill to 0, clear lead_standstill 0x20
+                        RxData[3] &= 0xDF;
+                      }
                     }
                   }
 
