@@ -103,6 +103,7 @@ class CanFilter(object):
     panda.set_safety_mode(Panda.SAFETY_ALLOUTPUT, True)
 
     CanFilter.reset(panda, enter_bootstub=True)
+    time.sleep(0.5)
 
     handle = BootLoaderHandle(panda)
     # confirm flasher is present
