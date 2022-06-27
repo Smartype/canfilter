@@ -36,7 +36,8 @@ class BootLoaderHandle(object):
     signal.signal(signal.SIGALRM, _handle_timeout)
     signal.alarm(1)
     try:
-      ret = self.panda.isotp_recv(2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
+      #ret = self.panda.isotp_recv(2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
+      ret = self.panda.isotp_recv(2, 0, sendaddr=1)
     finally:
       signal.alarm(0)
 
