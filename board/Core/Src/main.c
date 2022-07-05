@@ -1156,11 +1156,15 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               }
 
               // DISTANCE_REQ
-              if ((RxData[2] & 0x10) != 0)
+              if (((features & F_SET_DISTANCE_REQ) != 0) || ((features & F_MIRROR_ACC_MSG) == 0))
               {
-                if (((features & F_SET_DISTANCE_REQ) != 0) || ((features & F_MIRROR_ACC_MSG) == 0))
+                if ((RxData[2] & 0x10) != 0)
                 {
                   to_fwd.Data[2] |= 0x10;
+                }
+                else
+                {
+                  to_fwd.Data[2] &= 0xEF;
                 }
               }
 
