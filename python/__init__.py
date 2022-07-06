@@ -75,7 +75,8 @@ class FilterHandle(object):
     signal.signal(signal.SIGALRM, _handle_timeout)
     signal.alarm(1)
     try:
-      ret = self.panda.isotp_recv(CAN_FILTER_ISOTP_TX, 0, sendaddr=CAN_FILTER_ISOTP_RX, subaddr=None, bs=1, st=20)
+      #ret = self.panda.isotp_recv(CAN_FILTER_ISOTP_TX, 0, sendaddr=CAN_FILTER_ISOTP_RX, subaddr=None, bs=1, st=20)
+      ret = self.panda.isotp_recv(CAN_FILTER_ISOTP_TX, 0, sendaddr=CAN_FILTER_ISOTP_RX, subaddr=None)
     finally:
       signal.alarm(0)
 
