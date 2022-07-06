@@ -4,6 +4,7 @@ import sys
 import os
 import time
 import binascii
+from isotp_cf import isotp_send, isotp_recv
 from panda import Panda
 
 __version__ = '0.0.1'
@@ -22,12 +23,18 @@ FEATURE_PASSTHRU  = 16
 FEATURE_MIRROR_MSG = 32
 FEATURE_SET_DISTANCE= 64
 
+def panda_isotp_send(pd, addr, dat, bus, recvaddr=None, subaddr=None):
+  return isotp_send(pd, dat, addr, bus, recvaddr, subaddr)
+
+def panda_isotp_recv(pd, addr, bus=0, sendaddr=None, subaddr=None, bs=0, st=0):
+  return isotp_recv(pd, addr, bus, sendaddr, subaddr, bs, st)
+
 class BootLoaderHandle(object):
   def __init__(self, panda):
     self.panda = panda
 
   def transact(self, dat):
-    self.panda.isotp_send(1, dat, 0, recvaddr=2)
+    self.panda_isotp_send(self.panda, 1, dat, 0, recvaddr=2)
 
     def _handle_timeout(signum, frame):
       # will happen on reset
@@ -36,8 +43,7 @@ class BootLoaderHandle(object):
     signal.signal(signal.SIGALRM, _handle_timeout)
     signal.alarm(1)
     try:
-      #ret = self.panda.isotp_recv(2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
-      ret = self.panda.isotp_recv(2, 0, sendaddr=1)
+      ret = panda_isotp_recv(self.panda, 2, 0, sendaddr=1, subaddr=None, bs=1, st=20)
     finally:
       signal.alarm(0)
 
@@ -66,7 +72,7 @@ class FilterHandle(object):
     self.panda = panda
 
   def transact(self, dat):
-    self.panda.isotp_send(CAN_FILTER_ISOTP_RX, dat, 0, recvaddr=CAN_FILTER_ISOTP_TX)
+    panda_isotp_send(self.panda, CAN_FILTER_ISOTP_RX, dat, 0, recvaddr=CAN_FILTER_ISOTP_TX)
 
     def _handle_timeout(signum, frame):
       # will happen on reset
@@ -75,8 +81,7 @@ class FilterHandle(object):
     signal.signal(signal.SIGALRM, _handle_timeout)
     signal.alarm(1)
     try:
-      #ret = self.panda.isotp_recv(CAN_FILTER_ISOTP_TX, 0, sendaddr=CAN_FILTER_ISOTP_RX, subaddr=None, bs=1, st=20)
-      ret = self.panda.isotp_recv(CAN_FILTER_ISOTP_TX, 0, sendaddr=CAN_FILTER_ISOTP_RX, subaddr=None)
+      ret = panda_isotp_recv(self.panda, CAN_FILTER_ISOTP_TX, 0, sendaddr=CAN_FILTER_ISOTP_RX, subaddr=None, bs=1, st=20)
     finally:
       signal.alarm(0)
 
