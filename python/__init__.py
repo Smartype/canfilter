@@ -34,7 +34,7 @@ class BootLoaderHandle(object):
     self.panda = panda
 
   def transact(self, dat):
-    self.panda_isotp_send(self.panda, 1, dat, 0, recvaddr=2)
+    panda_isotp_send(self.panda, 1, dat, 0, recvaddr=2)
 
     def _handle_timeout(signum, frame):
       # will happen on reset
