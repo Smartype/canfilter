@@ -4,7 +4,7 @@ import sys
 import os
 import time
 import binascii
-from isotp_cf import isotp_send, isotp_recv
+from .isotp import isotp_send, isotp_recv
 from panda import Panda
 
 __version__ = '0.0.1'
