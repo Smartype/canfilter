@@ -29,13 +29,14 @@
 #include "stm32f1xx_it.c.h"
 #include "build/gitversion.h"
 
-#define F_ACC_SPEED_LOCKOUT   (1 << 2)
-#define F_LOW_SPEED_LEAD      (1 << 3)
-#define F_FORCE_PASSTHRU      (1 << 4)
-#define F_MIRROR_ACC_MSG      (1 << 5)
-#define F_SET_DISTANCE_REQ    (1 << 6)
+#define F_ACC_SPEED_LOCKOUT    (1 << 2)
+#define F_LOW_SPEED_LEAD       (1 << 3)
+#define F_FORCE_PASSTHRU       (1 << 4)
+#define F_MIRROR_ACC_MSG       (1 << 5)
+#define F_SET_DISTANCE_REQ     (1 << 6)
+#define F_ACC_SPEED_LOCKOUT_OP (1 << 7)
 
-uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
+uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ|F_ACC_SPEED_LOCKOUT_OP);
 
 // 10 msg
 #define MAX_ACC_CONTROL_TIMEOUT 300
@@ -1110,6 +1111,11 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         // ACC CONTROL, 33.33Hz
         else if (RxHeader.StdId == 0x343 && RxHeader.DLC == 8)
         {
+          if (stock_acc_type == 0)
+          {
+            stock_acc_type = ((RxData[2] >> 6) & 0x03);
+          }
+
           if (features & F_MIRROR_ACC_MSG)
           {
             // copy to CAN 0 with a different id
@@ -1120,12 +1126,9 @@ void can_rx(uint8_t can_number, uint32_t fifo)
             can_send_errs += can_push(can_queues[fwd_can], &to_fwd) ? 0U: 1U;
           }
 
+
           if (!(aeb_timeout < MAX_AEB_TIMEOUT))
           {
-            if (stock_acc_type == 0)
-            {
-              stock_acc_type = ((RxData[2] >> 6) & 0x03);
-            }
 
             // EON is sending, ignore this msg
             if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
@@ -1173,7 +1176,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               {
                 // engage at 30kph, disengage at 25kph
                 // disable lead car to disengage, or disable engagement
-                if ((features & F_ACC_SPEED_LOCKOUT) &&
+                if ((features & F_ACC_SPEED_LOCKOUT_OP) &&
                     (stock_acc_type != 1) &&
                     (!is_hybrid) &&
                     ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))

@@ -22,6 +22,7 @@ FEATURE_FAKELEAD  = 8
 FEATURE_PASSTHRU  = 16
 FEATURE_MIRROR_MSG = 32
 FEATURE_SET_DISTANCE= 64
+FEATURE_LOCKSPEED_OP = 128
 
 def panda_isotp_send(pd, addr, dat, bus, recvaddr=None, subaddr=None):
   return isotp_send(pd, dat, addr, bus, recvaddr, subaddr)
@@ -215,6 +216,7 @@ class CanFilter(object):
         elif x[1] == 'features':
           fl = [
             (FEATURE_LOCKSPEED, "LOCKSPEED"),
+            (FEATURE_LOCKSPEED_OP, "LOCKSPEED_OP"),
             (FEATURE_FAKELEAD, "FAKELEAD"),
             (FEATURE_PASSTHRU, "PASSTHRU"),
             (FEATURE_MIRROR_MSG, "MIRRORMSG"),
