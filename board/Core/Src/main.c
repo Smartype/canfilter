@@ -844,7 +844,8 @@ void can_rx(uint8_t can_number, uint32_t fifo)
 
     if (free_level <= 0)
     {
-      return;
+      // process_can
+      break;
     }
 
     // internal magic msg
