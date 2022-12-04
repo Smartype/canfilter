@@ -105,7 +105,7 @@ TIM_HandleTypeDef htim6;
 IWDG_HandleTypeDef hiwdg;
 
 uint8_t low_speed_lockout = 3;
-uint16_t vehicle_speed = 0;
+uint8_t cur_speed = 0;
 float cruise_active = 0.0f;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
@@ -518,8 +518,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   if (crash_state != CRASH_STATE_PASSTHRU)
   {
-    // 5Hz
-    if (++ status_tick_count >= 20)
+    // 1Hz
+    if (++ status_tick_count >= 100)
     {
       status_tick_count = 0;
 
@@ -948,11 +948,10 @@ void can_rx(uint8_t can_number, uint32_t fifo)
         {
           low_speed_lockout = (RxData[1] >> 5) & 0x3;
         }
-        // SPEED
-        else if (RxHeader.StdId == 0xB4 && RxHeader.DLC == 8)
+        // BODY_CONTROL_STATE_2
+        else if (RxHeader.StdId == 0x610 && RxHeader.DLC == 8)
         {
-          uint16_t speed = (RxData[5] << 8) | RxData[6];
-          vehicle_speed = (float)speed * 0.01;
+          cur_speed = RxData[2];
         }
         // PCM CRUISE
         else if (RxHeader.StdId == 0x1D2 && RxHeader.DLC == 8)
@@ -1170,14 +1169,14 @@ void can_rx(uint8_t can_number, uint32_t fifo)
               }
 
               // 45 on dash
-              if (vehicle_speed < 41.5)
+              if (cur_speed < 41)
               {
                 // engage at 30kph, disengage at 25kph
                 // disable lead car to disengage, or disable engagement
                 if ((features & F_ACC_SPEED_LOCKOUT) &&
                     (stock_acc_type != 1) &&
                     (!is_hybrid) &&
-                    ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0)))
+                    ((cruise_active && cur_speed < 21) || ((!cruise_active) && cur_speed < 26)))
                 {
                   speed_lockout_tick = HAL_GetTick();
                 }
@@ -1232,7 +1231,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                   RxData[2] |= 0x41;
 
                   // 45 on dash
-                  if (vehicle_speed < 41.5)
+                  if (cur_speed < 41)
                   {
                     if ((features & F_LOW_SPEED_LEAD) != 0)
                     {
@@ -1249,7 +1248,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                     {
                       // engage at 30kph, disengage at 25kph
                       // disable lead car to disengage, or disable engagement
-                      if ((cruise_active && vehicle_speed < 21.0) || ((!cruise_active) && vehicle_speed < 26.0))
+                      if ((cruise_active && cur_speed < 21) || ((!cruise_active) && cur_speed < 26))
                       {
                         if ((features & F_ACC_SPEED_LOCKOUT) && (stock_acc_type != 1) && (!is_hybrid))
                         {
@@ -1388,7 +1387,7 @@ int main(void)
   can_overflow_cnt = 0;
 
   low_speed_lockout = 3;
-  vehicle_speed = 0;
+  cur_speed = 0;
   cruise_active = false;
 
   acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
