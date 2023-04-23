@@ -62,7 +62,7 @@ uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ);
 // output
 #define CAN_FILTER_STATE            0x2A8U  // 680
 #define CAN_FILTER_ISOTP_TX         0x2A9U  // 681
-#define CAN_FILTER_ACC_CONTROL_COPY 0x2AAU  // 682
+#define CAN_FILTER_ACC_CONTROL_COPY 0x2FFU  // 767
 
 void __initialize_hardware_early(void) {
   early_initialization();
