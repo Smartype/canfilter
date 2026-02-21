@@ -39,7 +39,9 @@
 uint16_t features = (F_ACC_SPEED_LOCKOUT|F_MIRROR_ACC_MSG|F_SET_DISTANCE_REQ|F_ACC_SPEED_LOCKOUT_OP);
 
 // 10 msg
-#define MAX_ACC_CONTROL_TIMEOUT 300
+#define ACC_CONTROL_TIMEOUT     300
+#define MAX_ACC_CONTROL_TIMEOUT (ACC_CONTROL_TIMEOUT * 6)
+
 // 10 msg
 #define MAX_AEB_CONTROL_TIMEOUT 500
 
@@ -107,7 +109,7 @@ IWDG_HandleTypeDef hiwdg;
 
 uint8_t low_speed_lockout = 3;
 uint8_t cur_speed = 0;
-float cruise_active = 0.0f;
+bool cruise_active = false;
 
 uint32_t acc_control_timeout = MAX_ACC_CONTROL_TIMEOUT;
 uint32_t pre_collision_timeout = MAX_AEB_CONTROL_TIMEOUT;
@@ -1131,7 +1133,7 @@ void can_rx(uint8_t can_number, uint32_t fifo)
           {
 
             // EON is sending, ignore this msg
-            if (acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT)
+            if (acc_control_timeout < ACC_CONTROL_TIMEOUT)
             {
               // load ACC control (overwrite) msg
               if (!can_pop(&can_acc_control_q, &to_fwd))
@@ -1230,8 +1232,16 @@ void can_rx(uint8_t can_number, uint32_t fifo)
                 {
                   // clear acc_type 0xc0
                   RxData[2] &= 0x3F;
+
                   // add acc_type 0x40 and allow_long_press 0x01
                   RxData[2] |= 0x41;
+
+                  // inject alerts for 1.3 seconds
+                  if (cruise_active && acc_control_timeout < MAX_ACC_CONTROL_TIMEOUT - ACC_CONTROL_TIMEOUT)
+                  {
+                    // ACC_MALFUNCTION
+                    RxData[2] |= 0x4;
+                  }
 
                   // 45 on dash
                   if (cur_speed < 41)
