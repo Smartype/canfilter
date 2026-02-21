@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/system/bin/env python3
 import time
 import argparse
 from panda import Panda
